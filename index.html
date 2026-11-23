@@ -195,7 +195,7 @@
 <div id="setup" class="screen">
   <div class="box">
     <h2>入庫驗收</h2>
-    <p>選門市、驗收人員，再選要驗的調撥單。掃描槍請設定為鍵盤輸入模式。</p>
+    <p>選門市、驗收人員，再選要驗的調撥單。</p>
     <h3>門市</h3>
     <div id="storeGrid" class="grid"></div>
     <div id="staffWrap" class="hidden">
@@ -207,6 +207,7 @@
       <div id="batchList"></div>
     </div>
     <div id="note"></div>
+    <button id="btnReset" type="button" class="hidden" style="margin-top:14px;padding:10px 16px;font-size:15px;color:var(--err);border-color:var(--err);">清除這台手機的暫存</button>
   </div>
 </div>
 
@@ -531,13 +532,13 @@
       .then(function (res) {
         syncing = false;
         if (!S.batch || key !== S.store + '|' + S.batch.no) return;
-        if (!res || !res.ok) { fail(); return; }
+        if (!res || !res.ok) { if (res && res.msg) say('上傳失敗：' + res.msg, true); fail(); return; }
         syncFailed = false;
         S.ops = S.ops.slice(batch.length);
         S.got = res.got || {}; S.done = !!res.done;
         persist(); render();
         if (S.ops.length) flush();
-      }, function () { syncing = false; fail(); });
+      }, function (err) { syncing = false; say('上傳失敗：' + ((err && err.message) || err) + '（稍後自動重試）', true); fail(); });
     renderSync();
   }
   function fail() { syncFailed = true; renderSync(); clearTimeout(syncTimer); syncTimer = setTimeout(flush, RETRY_MS); }
@@ -550,8 +551,23 @@
   function showSetup() {
     $('setup').classList.remove('hidden');
     renderStores(); renderStaff(); renderBatches();
-    note(S.ops.length ? '還有 ' + S.ops.length + ' 筆待上傳，上傳完才能換門市或調撥單' : '');
+    note(S.ops.length ? '還有 ' + S.ops.length + ' 筆待上傳，上傳完才能換門市或調撥單（一直傳不上去可以按下面「清除這台手機的暫存」）' : '');
+    $('btnReset').classList.toggle('hidden', !S.ops.length);
   }
+  // 傳不上去的暫存（例如分頁被刪掉重建）會卡住換單：按兩次清掉這台手機的暫存與目前這張單
+  var resetArmed = false, resetTimer = null;
+  $('btnReset').addEventListener('click', function () {
+    if (!resetArmed) {
+      resetArmed = true; this.textContent = '再按一次：放棄 ' + S.ops.length + ' 筆未上傳的紀錄';
+      var self = this; resetTimer = setTimeout(function () { resetArmed = false; self.textContent = '清除這台手機的暫存'; }, 4000);
+      return;
+    }
+    clearTimeout(resetTimer); resetArmed = false; this.textContent = '清除這台手機的暫存';
+    S.ops = []; S.batch = null; S.items = []; S.got = {}; S.done = false; lastCode = '';
+    syncFailed = false; persist(); batchCache = {};
+    note('已清除，請重新選調撥單'); this.classList.add('hidden');
+    renderBatches(); renderSync();
+  });
   function renderStores() {
     $('storeGrid').innerHTML = stores.map(function (s) {
       return '<button type="button" data-store="' + s.code + '" class="' + (s.code === S.store ? 'on' : '') + '">' + esc(s.name) + '<small>' + s.code + '</small></button>';
@@ -981,6 +997,21 @@
   });
 
   // ── 啟動 ───────────────────────────────────────────────
+  // 上次開著的單：重新跟後端讀一次應收與實收（分頁可能被總倉改過或重新匯入），未上傳的動作保留
+  function reloadBatch() {
+    $('setup').classList.add('hidden'); render();
+    say('讀取 ' + S.batch.no + ' 最新內容…');
+    api('load', S.store, S.batch.id).then(function (res) {
+      if (!res || !res.ok) { say((res && res.msg) || '讀不到這張單，請按右上角重新選單', true); showSetup(); return; }
+      S.items = res.items; S.got = res.got || {}; S.done = !!res.done;
+      persist(); render();
+      say(S.ops.length ? '有 ' + S.ops.length + ' 筆未上傳，自動補傳中' : '已更新：' + res.no + ' 應收 ' + S.items.length + ' 品');
+      flush();
+    }, function (err) {
+      say('目前連不上系統，先用手機裡的清單，連線後補傳（' + ((err && err.message) || err) + '）', true);
+      render(); flush();
+    });
+  }
   function init() {
     var cached = load(KEY_PRODUCTS, null);
     if (cached) setProducts(cached);
@@ -990,11 +1021,8 @@
       if (!res || !res.ok) { note('讀不到商品資料，請重新整理', true); return; }
       stores = res.stores; setProducts(res.products); save(KEY_PRODUCTS, res.products);
       note('');
-      if (S.batch) {
-        $('setup').classList.add('hidden'); render();
-        if (S.ops.length) say('有 ' + S.ops.length + ' 筆未上傳，自動補傳中');
-        flush();
-      } else showSetup();
+      if (S.batch) reloadBatch();
+      else showSetup();
     }, function (err) {
       var why = (err && err.message) || String(err || '');
       if (cached && S.batch) { $('setup').classList.add('hidden'); render(); say('目前連不上系統，紀錄存在本機，連線後補傳（' + why + '）', true); }
