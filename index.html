@@ -216,8 +216,12 @@
       <div id="staffGrid" class="grid"></div>
     </div>
     <div id="batchWrap" class="hidden">
-      <h3>調撥單</h3>
+      <h3>調撥單（入庫驗收）</h3>
       <div id="batchList"></div>
+    </div>
+    <div id="outWrap" class="hidden">
+      <h3>調撥出庫</h3>
+      <button id="btnOut" type="button" class="batch"></button>
     </div>
     <div id="note"></div>
     <button id="btnReset" type="button" class="hidden" style="margin-top:14px;padding:10px 16px;font-size:15px;color:var(--err);border-color:var(--err);">清除這台手機的暫存</button>  </div>
@@ -260,7 +264,7 @@
 
 <div id="finishModal" class="modal">
   <div class="sheet">
-    <div class="sheet-h"><h3>完成驗收</h3></div>
+    <div class="sheet-h"><h3 id="finishTitle">完成驗收</h3></div>
     <div id="finishSum" class="finish-sum sheet-b"></div>
     <div class="sheet-f"><button id="btnFinishCancel" type="button">繼續掃</button><button id="btnFinishOk" class="main" type="button">確認完成</button></div>
   </div>
@@ -334,9 +338,27 @@
     });
   }
 
+  // ── 調撥出庫單：掃要出貨的商品與數量，送出後後端建分頁並轉出 POS 調撥作業匯入檔 ──
+  //   草稿存在這台手機（OUT），送出成功才清掉
+  var KEY_OUT = 'recv.out.v1';
+  var OUT = load(KEY_OUT, null);   // { on, store, staff, id, lines:[{code,name,n}] }
+  function isOut() { return !!(OUT && OUT.on); }
+  function ready() { return isOut() || !!S.batch; }
+  function persistOut() { save(KEY_OUT, OUT); }
+  function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+  function outSet(code, n) {
+    var l = OUT.lines.filter(function (x) { return x.code === code; })[0];
+    if (n <= 0) OUT.lines = OUT.lines.filter(function (x) { return x.code !== code; });
+    else if (l) l.n = n;
+    else OUT.lines.unshift({ code: code, name: nameOf(code), n: n });
+    persistOut();
+  }
+  function outTotal() { var t = 0; OUT.lines.forEach(function (l) { t += l.n; }); return t; }
+
   // ── 數量 ───────────────────────────────────────────────
   function counts() {
     var c = {};
+    if (isOut()) { OUT.lines.forEach(function (l) { c[l.code] = l.n; }); return c; }
     Object.keys(S.got).forEach(function (k) { c[k] = S.got[k]; });
     S.ops.forEach(function (o) {
       if (o.op === 'add') c[o.code] = (c[o.code] || 0) + o.n;
@@ -378,10 +400,14 @@
     var st = stores.filter(function (s) { return s.code === S.store; })[0];
     $('btnWho').innerHTML = S.batch ? esc((st ? st.name : S.store) + '・' + S.batch.no) + '<small>' + esc(S.staff.join('、')) + '</small>' : '選擇門市';
   }
+  function sumTiles(list) {
+    $('summary').style.gridTemplateColumns = 'repeat(' + list.length + ',1fr)';
+    $('summary').innerHTML = list.map(function (t) { return '<div class="sum"><b>' + t[0] + '</b><span>' + t[1] + '</span></div>'; }).join('');
+  }
   function renderSummary(rows) {
     var got = 0, exp = 0, same = 0, diff = 0;
     rows.forEach(function (r) { got += r.got; exp += r.expect; if (r.expect && r.got === r.expect) same++; else if (r.got !== r.expect) diff++; });
-    $('sumGot').textContent = got; $('sumExpect').textContent = exp; $('sumSame').textContent = same; $('sumDiff').textContent = diff;
+    sumTiles([[got, '已掃件數'], [exp, '應收件數'], [same, '相符品項'], [diff, '差異品項']]);
   }
   function renderCard() {
     var card = $('card');
@@ -431,6 +457,7 @@
     }
   }
   function renderSync() {
+    if (isOut()) return;
     var n = S.ops.length, el = $('sync');
     el.className = syncFailed ? 'bad' : '';
     el.textContent = syncFailed ? '連線失敗，待上傳 ' + n : n ? '上傳中 ' + n : (S.batch ? '已上傳' : '');
@@ -441,14 +468,42 @@
     b.textContent = S.done ? '已完成驗收（還可以補掃或改數量）' : '完成驗收';
   }
   function render() {
+    $('filters').classList.toggle('hidden', isOut());
+    if (isOut()) { renderOut(); return; }
     var rows = rowsAll();
     renderHeader(); renderSummary(rows); renderCard(); renderList(rows); renderSync(); renderFinish();
+  }
+
+  // 調撥出庫單畫面：標題、件數、剛掃的品項、清單、送出鈕
+  function renderOut() {
+    var st = stores.filter(function (s) { return s.code === OUT.store; })[0];
+    $('btnWho').innerHTML = esc('調撥出庫・' + (st ? st.name : OUT.store)) + '<small>' + esc((OUT.staff || []).join('、')) + '</small>';
+    sumTiles([[OUT.lines.length, '品項'], [outTotal(), '件數']]);
+    var card = $('card'), n = lastCode ? (counts()[lastCode] || 0) : 0;
+    card.className = '';
+    card.innerHTML = lastCode && n
+      ? '<div class="info"><div class="nm">' + esc(nameOf(lastCode)) + '</div><div class="cd mono">' + esc(lastCode) + '</div></div><div class="cnt"><b>' + n + '</b><span>調撥數量</span></div>'
+      : '<div class="wait">掃要出貨的商品，每掃一次 +1<br>點清單可改數量，改成 0 就移除</div>';
+    var html = OUT.lines.length ? OUT.lines.map(function (l) {
+      return '<button class="row' + (l.code === lastCode ? ' last' : '') + '" type="button" data-code="' + esc(l.code) + '">' +
+        '<div><div class="n">' + esc(l.name || l.code) + '</div><div class="s mono">' + esc(l.code) + '</div></div>' +
+        '<div class="q">' + l.n + '</div><div class="r"></div></button>';
+    }).join('') : '<div class="empty">還沒有掃任何商品</div>';
+    $('list').innerHTML = html;
+    if (camOpen) {
+      $('camList').innerHTML = html;
+      var cur = $('camList').querySelector('.row.last');
+      if (cur) cur.scrollIntoView({ block: 'nearest' });
+    }
+    $('sync').textContent = ''; $('sync').className = '';
+    $('btnFinish').className = '';
+    $('btnFinish').textContent = '送出調撥出庫單' + (OUT.lines.length ? '（' + OUT.lines.length + ' 品 ' + outTotal() + ' 件）' : '');
   }
 
   // ── 掃描 ───────────────────────────────────────────────
   function onScan(raw) {
     raw = String(raw || '').normalize('NFKC').trim();
-    if (!raw || !S.batch || !$('setup').classList.contains('hidden')) return;
+    if (!raw || !ready() || !$('setup').classList.contains('hidden')) return;
     // 條碼表 → 品號；掃到的就是品號（BOT 瓶器類條碼＝商品代號）也算
     var code = codeOf(raw);
     var codes = byBarcode[raw] || ((byCode[code] || itemOf(code)) ? [code] : null);
@@ -482,7 +537,17 @@
     say(mode === 'each' ? '逐筆輸入數量：掃到後輸入數量' : '連續刷：每掃一次 +1');
   });
   renderMode();
+  function camBar() {
+    if (camOpen && lastMsg.text) { $('camLast').textContent = lastMsg.text; $('camLast').className = 'tap' + (lastMsg.err ? ' err' : ''); }
+  }
   function addOne(code) {
+    if (isOut()) {
+      var n = (counts()[code] || 0) + 1;
+      outSet(code, n); lastCode = code;
+      say(nameOf(code) + ' +1（共 ' + n + '）'); beepOk();
+      camBar(); camFlash(true, esc(nameOf(code)), '+1　' + n);
+      render(); return;
+    }
     pushOp({ op: 'add', code: code, name: nameOf(code), n: 1 });
     lastCode = code;
     var i = itemOf(code), got = counts()[code] || 0;
@@ -566,6 +631,7 @@
   function note(t, err) { $('note').textContent = t || ''; $('note').className = err ? 'err' : ''; }
   function pickedStaff() { return load('recv.staff.' + S.store, []); }
   function showSetup() {
+    if (isOut()) { OUT.on = false; persistOut(); lastCode = ''; }
     $('setup').classList.remove('hidden');
     renderStores(); renderStaff(); renderBatches();
     note(S.ops.length ? '還有 ' + S.ops.length + ' 筆待上傳，上傳完才能換門市或調撥單' : '');
@@ -611,7 +677,12 @@
   function renderBatches() {
     var ready = S.store && pickedStaff().length;
     $('batchWrap').classList.toggle('hidden', !ready);
+    $('outWrap').classList.toggle('hidden', !ready);
     if (!ready) return;
+    var draft = OUT && OUT.store === S.store && OUT.lines.length;
+    $('btnOut').innerHTML = draft
+      ? '繼續調撥出庫單<span class="open">草稿 ' + OUT.lines.length + ' 品 ' + outTotal() + ' 件</span>'
+      : '新增調撥出庫單<span>掃商品、填數量，送出轉 POS 匯入檔</span>';
     var list = batchCache[S.store];
     if (!list) {
       $('batchList').innerHTML = '<p>讀取調撥單中…</p>';
@@ -662,6 +733,15 @@
     renderStaff(); renderBatches();
   });
   $('batchList').addEventListener('click', function (e) { var b = e.target.closest('button[data-id]'); if (b) openBatch(b.getAttribute('data-id')); });
+  // 新增（或繼續）調撥出庫單：草稿跟著門市，換門市就開新的一張
+  function openOut() {
+    if (!OUT || OUT.store !== S.store) OUT = { store: S.store, id: newId(), lines: [] };
+    OUT.on = true; OUT.staff = pickedStaff(); persistOut();
+    lastCode = ''; $('setup').classList.add('hidden'); note('');
+    say('調撥出庫：掃要出貨的商品');
+    render(); window.focus();
+  }
+  $('btnOut').addEventListener('click', openOut);
   $('btnWho').addEventListener('click', function () { delete batchCache[S.store]; showSetup(); });
 
   // ── 清單、篩選、改數量 ─────────────────────────────────
@@ -677,7 +757,7 @@
     editCode = code; editVal = String(counts()[code] || 0); editAdd = false;
     var i = itemOf(code);
     $('editName').textContent = nameOf(code);
-    $('editMeta').textContent = code + '・' + (i ? '應收 ' + i.expect : '不在這張調撥單');
+    $('editMeta').textContent = code + '・' + (isOut() ? '調撥數量（改成 0 就移除）' : i ? '應收 ' + i.expect : '不在這張調撥單');
     $('editQty').textContent = editVal;
     renderEditBoxes(code);
     $('btnEditSave').textContent = '改成這個數量';
@@ -700,7 +780,7 @@
     editCode = code; editVal = ''; editAdd = true;
     var i = itemOf(code), got = counts()[code] || 0;
     $('editName').textContent = nameOf(code);
-    $('editMeta').textContent = code + '・' + (i ? '應收 ' + i.expect : '不在這張調撥單') + '・已收 ' + got;
+    $('editMeta').textContent = code + '・' + (isOut() ? '已掃 ' + got : (i ? '應收 ' + i.expect : '不在這張調撥單') + '・已收 ' + got);
     $('editQty').textContent = '0';
     renderEditBoxes(code);
     $('btnEditSave').textContent = '加入這個數量';
@@ -716,6 +796,15 @@
   function editDigit(d) { if (editVal === '0') editVal = ''; if (editVal.length < 4) editVal += d; $('editQty').textContent = editVal; }
   function saveEdit() {
     var n = parseInt(editVal || '0', 10);
+    if (isOut()) {
+      var v = editAdd ? (counts()[editCode] || 0) + n : n;
+      if (!editAdd || n > 0) {
+        outSet(editCode, v);
+        if (v > 0) { say(nameOf(editCode) + ' 共 ' + v); beepOk(); } else say('已移除：' + nameOf(editCode));
+      }
+      lastCode = v > 0 ? editCode : ''; closeModals(); render(); camBar();
+      return;
+    }
     if (editAdd) {
       if (n > 0) {
         pushOp({ op: 'add', code: editCode, name: nameOf(editCode), n: n });
@@ -727,8 +816,7 @@
     } else if (n !== (counts()[editCode] || 0)) {
       pushOp({ op: 'set', code: editCode, name: nameOf(editCode), n: n }); say('已改：' + nameOf(editCode) + ' 實收 ' + n);
     }
-    lastCode = editCode; closeModals(); render();
-    if (camOpen && lastMsg.text) { $('camLast').textContent = lastMsg.text; $('camLast').className = 'tap' + (lastMsg.err ? ' err' : ''); }
+    lastCode = editCode; closeModals(); render(); camBar();
   }
   $('pad').innerHTML = ['7', '8', '9', '4', '5', '6', '1', '2', '3'].map(function (d) { return '<button type="button" data-d="' + d + '">' + d + '</button>'; }).join('') +
     '<button type="button" class="fn" data-fn="clear">清除</button><button type="button" data-d="0">0</button><button type="button" class="fn" data-fn="back">退格</button>';
@@ -747,19 +835,20 @@
   function pickRows(list) {
     return list.slice(0, 60).map(function (p) {
       var i = itemOf(p.code);
-      return '<button type="button" class="pick" data-code="' + esc(p.code) + '"><div class="n">' + esc(p.name || p.code) + '</div><div class="s mono">' + esc(p.code) + (i ? '・應收 ' + i.expect : '') + '</div></button>';
+      var tag = isOut() ? ((counts()[p.code] || 0) ? '・已掃 ' + counts()[p.code] : '') : (i ? '・應收 ' + i.expect : '');
+      return '<button type="button" class="pick" data-code="' + esc(p.code) + '"><div class="n">' + esc(p.name || p.code) + '</div><div class="s mono">' + esc(p.code) + tag + '</div></button>';
     }).join('');
   }
   function searchProducts(q) {
     var t = String(q).normalize('NFKC').toLowerCase().split(/\s+/).filter(Boolean);
-    if (!t.length) return S.items.map(function (i) { return byCode[i.code] || { code: i.code, name: i.name, codes: [] }; });
+    if (!t.length) return (isOut() ? OUT.lines : S.items).map(function (i) { return byCode[i.code] || { code: i.code, name: i.name, codes: [] }; });
     return products.filter(function (p) {
       var hay = (p.name + ' ' + p.code + ' ' + p.codes.join(' ')).toLowerCase();
       return t.every(function (x) { return hay.indexOf(x) >= 0; });
     }).sort(function (a, b) { return (itemOf(b.code) ? 1 : 0) - (itemOf(a.code) ? 1 : 0); });
   }
   function openSearch() {
-    if (!S.batch) return;
+    if (!ready()) return;
     $('searchTitle').textContent = mode === 'each' ? '查品項（選了就輸入數量）' : '查品項（選了就 +1）';
     $('searchInput').classList.remove('hidden'); $('searchInput').value = '';
     $('results').innerHTML = pickRows(searchProducts(''));
@@ -780,7 +869,7 @@
 
   // ── 輸入條碼（手機鍵盤）：可以一直輸入下一個 ─────────────
   function openType() {
-    if (!S.batch) { say('請先選調撥單', true); return; }
+    if (!ready()) { say('請先選調撥單', true); return; }
     $('typeMsg').textContent = '輸入後按 Enter 或「送出」，可以一直輸入下一個'; $('typeMsg').className = '';
     $('typeInput').value = '';
     $('typeModal').classList.add('show');
@@ -808,7 +897,19 @@
 
   // ── 完成驗收 ───────────────────────────────────────────
   $('btnFinish').addEventListener('click', function () {
+    if (isOut()) {
+      if (!OUT.lines.length) { say('還沒有掃任何商品', true); beepErr(); return; }
+      var st = stores.filter(function (s) { return s.code === OUT.store; })[0];
+      $('finishTitle').textContent = '送出調撥出庫單';
+      $('finishSum').innerHTML = esc(st ? st.name : OUT.store) + '<br>共 <b>' + OUT.lines.length + '</b> 品、<b>' + outTotal() + '</b> 件' +
+        '<br><br>送出後會在試算表建一個分頁，並轉出 POS 調撥作業匯入檔。';
+      $('btnFinishOk').textContent = '確認送出';
+      $('finishModal').classList.add('show');
+      return;
+    }
     if (!S.batch) return;
+    $('finishTitle').textContent = '完成驗收';
+    $('btnFinishOk').textContent = '確認完成';
     var rows = rowsAll(), n = { same: 0, short: 0, shortQty: 0, over: 0, extra: 0 };
     rows.forEach(function (r) {
       var k = resultOf(r.expect, r.got).key;
@@ -822,7 +923,26 @@
     $('finishModal').classList.add('show');
   });
   $('btnFinishCancel').addEventListener('click', closeModals);
+  var outBusy = false;
+  function sendOut() {
+    if (outBusy) return;
+    outBusy = true;
+    var btn = $('btnFinishOk'); btn.disabled = true; btn.textContent = '送出中…';
+    var done = function () { outBusy = false; btn.disabled = false; btn.textContent = '確認送出'; };
+    api('out', { id: OUT.id, store: OUT.store, staff: OUT.staff, lines: OUT.lines.map(function (l) { return [l.code, l.n]; }) })
+      .then(function (res) {
+        done(); closeModals();
+        if (!res || !res.ok) { say('送出失敗：' + ((res && res.msg) || '請再按一次'), true); beepErr(); return; }
+        OUT = null; persistOut(); lastCode = ''; beepOk();
+        showSetup();
+        note('已送出 ' + res.tab + '（' + res.items + ' 品 ' + res.qty + ' 件），POS 匯入檔在「調撥匯入檔」資料夾');
+      }, function (err) {
+        done(); closeModals();
+        say('送出失敗：' + ((err && err.message) || err) + '（草稿還在，可以再按一次送出）', true); beepErr();
+      });
+  }
   $('btnFinishOk').addEventListener('click', function () {
+    if (isOut()) { sendOut(); return; }
     pushOp({ op: 'finish', code: '', n: 0 });
     S.done = true; persist(); closeModals(); say('已完成驗收'); beepOk(); render();
   });
@@ -947,7 +1067,7 @@
     else startLibCam();
   }
   function openCam() {
-    if (!S.batch) { say('請先選調撥單', true); return; }
+    if (!ready()) { say('請先選調撥單', true); return; }
     if (!window.ZXingWASM && !hasLib()) { say('相機掃描元件載入失敗，請確認網路後重新整理', true); return; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { say('這個瀏覽器不能用相機，請用 Chrome 或 Safari 開啟', true); return; }
     unlockAudio();
@@ -961,7 +1081,7 @@
   $('btnCam').addEventListener('click', openCam);
   $('btnCamClose').addEventListener('click', closeCam);
   // 相機下方那一列：點了直接改剛掃到的那個品項
-  $('camLast').addEventListener('click', function () { if (lastCode && S.batch) openEdit(lastCode); });
+  $('camLast').addEventListener('click', function () { if (lastCode && ready()) openEdit(lastCode); });
   $('btnCamFlip').addEventListener('click', function () { if (camDevices.length < 2) return; camIdx = (camIdx + 1) % camDevices.length; startCam(); });
 
   // ── 拍照解析（同批號盤點：整張讀不到就局部放大再試）──────────
@@ -1013,7 +1133,7 @@
   }
   var shotBusy = false, shotTimer = null;
   $('btnShot').addEventListener('click', function () {
-    if (!S.batch) { say('請先選調撥單', true); return; }
+    if (!ready()) { say('請先選調撥單', true); return; }
     if (shotBusy) { say('上一張還在辨識中…', true); return; }
     if (camOpen) closeCam();
     unlockAudio(); $('fShot').click();
@@ -1060,11 +1180,13 @@
       if (!res || !res.ok) { note('讀不到商品資料，請重新整理', true); return; }
       stores = res.stores; setProducts(res.products); save(KEY_PRODUCTS, res.products);
       note('');
-      if (S.batch) reloadBatch();
+      if (isOut()) { $('setup').classList.add('hidden'); say('調撥出庫：草稿 ' + OUT.lines.length + ' 品'); render(); }
+      else if (S.batch) reloadBatch();
       else showSetup();
     }, function (err) {
       var why = (err && err.message) || String(err || '');
-      if (cached && S.batch) { $('setup').classList.add('hidden'); render(); say('目前連不上系統，紀錄存在本機，連線後補傳（' + why + '）', true); }
+      if (cached && isOut()) { $('setup').classList.add('hidden'); render(); say('目前連不上系統，可以先掃，送出時要有網路（' + why + '）', true); }
+      else if (cached && S.batch) { $('setup').classList.add('hidden'); render(); say('目前連不上系統，紀錄存在本機，連線後補傳（' + why + '）', true); }
       else note('載入失敗：' + why, true);
     });
   }
