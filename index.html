@@ -1004,11 +1004,12 @@
     api('out', { id: OUT.id, store: OUT.store, staff: OUT.staff, lines: OUT.lines.map(function (l) { return [l.code, l.n]; }) })
       .then(function (res) {
         done(); closeModals();
-        if (!res || !res.ok) { say('送出失敗：' + ((res && res.msg) || '請再按一次') + '（草稿還在，再按一次送出不會重複建單）', true); beepErr(); return; }
+        if (!res || !res.ok) { say('送出失敗：' + ((res && res.msg) || '請再按一次') + '（草稿還在，可以再按一次送出）', true); beepErr(); return; }
         delete outCache[OUT.store];
         OUT = null; persistOut(); lastCode = ''; beepOk();
         showSetup();
-        note('已送出 ' + res.tab + '（' + res.items + ' 品 ' + res.qty + ' 件），POS 匯入檔在「調撥匯入檔」資料夾');
+        note('已送出 ' + res.tab + '（' + res.items + ' 品 ' + res.qty + ' 件）' +
+          (res.warn ? '。' + res.warn : '，POS 匯入檔在「調撥匯入檔」資料夾'));
       }, function (err) {
         done(); closeModals();
         say('送出失敗：' + ((err && err.message) || err) + '（草稿還在，可以再按一次送出）', true); beepErr();
