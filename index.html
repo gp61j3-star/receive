@@ -86,6 +86,12 @@
   .batch { display:flex; justify-content:space-between; align-items:center; width:100%; padding:12px 14px; margin-bottom:6px; font-size:18px; font-weight:700; text-align:left; }
   .batch span { font-size:14px; font-weight:600; color:var(--mute); }
   .batch span.open { color:var(--warn); } .batch span.done { color:var(--ok); }
+  button.del { padding:8px 14px; font-size:15px; font-weight:600; color:var(--err); border-color:var(--err); background:#fff; }
+  #btnOutDrop { margin-bottom:6px; }
+  #outList p { margin:12px 0 6px; }
+  .outrow { display:flex; align-items:center; gap:8px; padding:8px 10px 8px 14px; margin-bottom:6px; background:#fff; border:1px solid var(--line); border-radius:10px; }
+  .outrow div { flex:1; min-width:0; font-size:16px; font-weight:700; }
+  .outrow div span { display:block; font-size:13px; font-weight:400; color:var(--mute); }
   #note { margin-top:14px; font-size:14px; color:var(--mid); min-height:1.4em; }
   #note.err { color:var(--err); font-weight:700; }
 
@@ -222,6 +228,8 @@
     <div id="outWrap" class="hidden">
       <h3>調撥出庫</h3>
       <button id="btnOut" type="button" class="batch"></button>
+      <button id="btnOutDrop" type="button" class="del hidden">刪除這張草稿</button>
+      <div id="outList"></div>
     </div>
     <div id="note"></div>
     <button id="btnReset" type="button" class="hidden" style="margin-top:14px;padding:10px 16px;font-size:15px;color:var(--err);border-color:var(--err);">清除這台手機的暫存</button>  </div>
@@ -247,7 +255,7 @@
     <div id="editQty">0</div>
     <div id="editBoxes"></div>
     <div id="pad"></div>
-    <div class="sheet-f"><button id="btnEditCancel" type="button">取消</button><button id="btnEditSave" class="main" type="button">改成這個數量</button></div>
+    <div class="sheet-f"><button id="btnEditDel" type="button" class="del hidden" style="margin-right:auto">刪除</button><button id="btnEditCancel" type="button">取消</button><button id="btnEditSave" class="main" type="button">改成這個數量</button></div>
   </div>
 </div>
 
@@ -632,6 +640,8 @@
   function pickedStaff() { return load('recv.staff.' + S.store, []); }
   function showSetup() {
     if (isOut()) { OUT.on = false; persistOut(); lastCode = ''; }
+    // 門市每次都要自己點，不沿用上次的（避免選錯店）；還有待上傳的紀錄時才保留
+    if (!S.ops.length && S.store) { S.store = ''; persist(); }
     $('setup').classList.remove('hidden');
     renderStores(); renderStaff(); renderBatches();
     note(S.ops.length ? '還有 ' + S.ops.length + ' 筆待上傳，上傳完才能換門市或調撥單' : '');
@@ -683,6 +693,8 @@
     $('btnOut').innerHTML = draft
       ? '繼續調撥出庫單<span class="open">草稿 ' + OUT.lines.length + ' 品 ' + outTotal() + ' 件</span>'
       : '新增調撥出庫單<span>掃商品、填數量，送出轉 POS 匯入檔</span>';
+    $('btnOutDrop').classList.toggle('hidden', !draft);
+    renderOutList();
     var list = batchCache[S.store];
     if (!list) {
       $('batchList').innerHTML = '<p>讀取調撥單中…</p>';
@@ -742,7 +754,59 @@
     render(); window.focus();
   }
   $('btnOut').addEventListener('click', openOut);
-  $('btnWho').addEventListener('click', function () { delete batchCache[S.store]; showSetup(); });
+
+  // 刪除要按兩次：第一次變成「再按一次…」，4 秒內再按才執行
+  var armedBtn = null, armTimer = null;
+  function twoTap(btn, armedText, fn) {
+    if (armedBtn !== btn) {
+      if (armedBtn) armedBtn.textContent = armedBtn.getAttribute('data-label');
+      btn.setAttribute('data-label', btn.textContent);
+      btn.textContent = armedText; armedBtn = btn;
+      clearTimeout(armTimer);
+      armTimer = setTimeout(function () { if (armedBtn) { armedBtn.textContent = armedBtn.getAttribute('data-label'); armedBtn = null; } }, 4000);
+      return;
+    }
+    clearTimeout(armTimer); armedBtn = null; btn.textContent = btn.getAttribute('data-label');
+    fn();
+  }
+  $('btnOutDrop').addEventListener('click', function () {
+    twoTap(this, '再按一次：刪除草稿', function () {
+      OUT = null; persistOut(); note('已刪除草稿'); renderBatches();
+    });
+  });
+
+  // 已送出的調撥出庫單：列出本店最近幾張，可以整張刪除（分頁與匯入檔一起刪）
+  var outCache = {}, outLoading = {};
+  function renderOutList() {
+    var store = S.store, list = outCache[store];
+    if (!list) {
+      $('outList').innerHTML = '';
+      if (outLoading[store]) return;
+      outLoading[store] = true;
+      api('outList', store).then(function (res) {
+        outLoading[store] = false;
+        if (res && res.ok) { outCache[store] = res.list; if (S.store === store) renderOutList(); }
+      }, function () { outLoading[store] = false; });
+      return;
+    }
+    $('outList').innerHTML = list.length ? '<p>已送出（POS 匯入檔在「調撥匯入檔」資料夾）</p>' + list.map(function (o) {
+      return '<div class="outrow"><div>' + esc(o.time) + '<span>' + o.items + ' 品 ' + o.qty + ' 件</span></div>' +
+        '<button type="button" class="del" data-tab="' + esc(o.tab) + '">刪除</button></div>';
+    }).join('') : '';
+  }
+  $('outList').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-tab]'); if (!b) return;
+    var tab = b.getAttribute('data-tab'), store = S.store;
+    twoTap(b, '再按一次刪除', function () {
+      b.disabled = true;
+      api('outDelete', tab).then(function (res) {
+        if (!res || !res.ok) { b.disabled = false; note((res && res.msg) || '刪除失敗', true); return; }
+        outCache[store] = (outCache[store] || []).filter(function (o) { return o.tab !== tab; });
+        note('已刪除 ' + tab); renderOutList();
+      }, function (err) { b.disabled = false; note('刪除失敗：' + ((err && err.message) || err), true); });
+    });
+  });
+  $('btnWho').addEventListener('click', function () { delete batchCache[S.store]; delete outCache[S.store]; showSetup(); });
 
   // ── 清單、篩選、改數量 ─────────────────────────────────
   $('filters').addEventListener('click', function (e) {
@@ -760,6 +824,7 @@
     $('editMeta').textContent = code + '・' + (isOut() ? '調撥數量（改成 0 就移除）' : i ? '應收 ' + i.expect : '不在這張調撥單');
     $('editQty').textContent = editVal;
     renderEditBoxes(code);
+    $('btnEditDel').classList.toggle('hidden', !isOut());
     $('btnEditSave').textContent = '改成這個數量';
     $('editModal').classList.add('show');
   }
@@ -783,6 +848,7 @@
     $('editMeta').textContent = code + '・' + (isOut() ? '已掃 ' + got : (i ? '應收 ' + i.expect : '不在這張調撥單') + '・已收 ' + got);
     $('editQty').textContent = '0';
     renderEditBoxes(code);
+    $('btnEditDel').classList.add('hidden');
     $('btnEditSave').textContent = '加入這個數量';
     $('editModal').classList.add('show');
     beepOk();
@@ -827,6 +893,12 @@
     else { editVal = ''; $('editQty').textContent = '0'; }
   });
   $('btnEditSave').addEventListener('click', saveEdit);
+  // 調撥出庫單：整項刪除
+  $('btnEditDel').addEventListener('click', function () {
+    if (!isOut()) return;
+    outSet(editCode, 0); say('已刪除：' + nameOf(editCode));
+    lastCode = ''; closeModals(); render(); camBar();
+  });
   $('btnEditCancel').addEventListener('click', closeModals);
   $('list').addEventListener('click', function (e) { var b = e.target.closest('button[data-code]'); if (b) openEdit(b.getAttribute('data-code')); });
   $('camList').addEventListener('click', function (e) { var b = e.target.closest('button[data-code]'); if (b) openEdit(b.getAttribute('data-code')); });
@@ -932,7 +1004,8 @@
     api('out', { id: OUT.id, store: OUT.store, staff: OUT.staff, lines: OUT.lines.map(function (l) { return [l.code, l.n]; }) })
       .then(function (res) {
         done(); closeModals();
-        if (!res || !res.ok) { say('送出失敗：' + ((res && res.msg) || '請再按一次'), true); beepErr(); return; }
+        if (!res || !res.ok) { say('送出失敗：' + ((res && res.msg) || '請再按一次') + '（草稿還在，再按一次送出不會重複建單）', true); beepErr(); return; }
+        delete outCache[OUT.store];
         OUT = null; persistOut(); lastCode = ''; beepOk();
         showSetup();
         note('已送出 ' + res.tab + '（' + res.items + ' 品 ' + res.qty + ' 件），POS 匯入檔在「調撥匯入檔」資料夾');
