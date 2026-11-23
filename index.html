@@ -93,7 +93,7 @@
   #note { margin-top:14px; font-size:14px; color:var(--mid); min-height:1.4em; }
   #note.err { color:var(--err); font-weight:700; }
 
-  .modal { position:fixed; inset:0; z-index:40; background:rgba(20,28,38,.5); display:none; align-items:flex-start; justify-content:center; padding:4vh 10px; }
+  .modal { position:fixed; inset:0; z-index:60; background:rgba(20,28,38,.5); display:none; align-items:flex-start; justify-content:center; padding:4vh 10px; }
   .modal.show { display:flex; }
   .sheet { width:min(640px,100%); max-height:90vh; display:flex; flex-direction:column; background:#fff; border-radius:14px; overflow:hidden; }
   .sheet-h { padding:14px 16px 10px; }
@@ -115,11 +115,22 @@
   .finish-sum { padding:10px 16px; font-size:16px; line-height:1.9; }
   .finish-sum b { font-variant-numeric:tabular-nums; }
 
+  /* 相機：上半部相機、中間工具列、下半部清單（邊掃邊看、點列可改數量） */
   #cam { position:fixed; inset:0; z-index:50; display:none; flex-direction:column; background:#111a24; }
   #cam.show { display:flex; }
-  .cam-view { position:relative; flex:1; min-height:0; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+  .cam-view { position:relative; flex:0 0 44vh; min-height:0; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+  #camList { flex:1; min-height:0; overflow:auto; -webkit-overflow-scrolling:touch; background:#fff; }
   #camVideo { width:100%; height:100%; object-fit:cover; }
-  .cam-frame { position:absolute; width:min(80vw,640px); height:min(30vh,240px); border:3px solid #fff; border-radius:12px; box-shadow:0 0 0 2000px rgba(17,26,36,.35); pointer-events:none; }
+  .cam-frame { position:absolute; width:min(84vw,640px); height:min(20vh,200px); border:3px solid #fff; border-radius:12px; box-shadow:0 0 0 2000px rgba(17,26,36,.35); pointer-events:none; transition:border-color .15s, box-shadow .15s; }
+  /* 掃到的瞬間：框閃顏色，畫面中間跳出品名與數量 */
+  .cam-frame.ok  { border-width:6px; border-color:#3ecf7f; box-shadow:0 0 0 2000px rgba(47,107,74,.45); }
+  .cam-frame.err { border-width:6px; border-color:#ff6b5e; box-shadow:0 0 0 2000px rgba(151,57,47,.45); }
+  #camFlash { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:min(86vw,560px); padding:16px 20px; border-radius:16px; background:rgba(47,107,74,.94); color:#fff; text-align:center; pointer-events:none; display:none; }
+  #camFlash.show { display:block; }
+  #camFlash.err { background:rgba(151,57,47,.95); }
+  #camFlash .nm { font-size:22px; font-weight:700; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #camFlash .ct { margin-top:4px; font-size:44px; font-weight:800; line-height:1.1; font-variant-numeric:tabular-nums; }
+  #camFlash .ct small { font-size:20px; font-weight:600; opacity:.85; }
   .cam-bar { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:8px; align-items:center; padding:10px 12px; background:#fff; }
   #camLast { font-size:15px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #camLast.err { color:var(--err); }
@@ -207,8 +218,7 @@
       <div id="batchList"></div>
     </div>
     <div id="note"></div>
-    <button id="btnReset" type="button" class="hidden" style="margin-top:14px;padding:10px 16px;font-size:15px;color:var(--err);border-color:var(--err);">清除這台手機的暫存</button>
-  </div>
+    <button id="btnReset" type="button" class="hidden" style="margin-top:14px;padding:10px 16px;font-size:15px;color:var(--err);border-color:var(--err);">清除這台手機的暫存</button>  </div>
 </div>
 
 <div id="searchModal" class="modal">
@@ -257,12 +267,14 @@
   <div class="cam-view">
     <video id="camVideo" playsinline muted></video>
     <div class="cam-frame"></div>
+    <div id="camFlash"><div class="nm"></div><div class="ct"></div></div>
   </div>
   <div class="cam-bar">
     <div id="camLast">條碼放進框內，每掃到一次 +1</div>
     <button id="btnCamFlip" type="button" class="hidden">切換鏡頭</button>
     <button id="btnCamClose" type="button">完成</button>
   </div>
+  <div id="camList"></div>
 </div>
 
 <div id="focusTip"><div>點一下畫面，才能繼續掃描</div></div>
@@ -422,12 +434,19 @@
       if (filter === 'diff') return r.got !== r.expect;
       return true;
     });
-    $('list').innerHTML = list.length ? list.map(function (r) {
+    var html = list.length ? list.map(function (r) {
       var res = resultOf(r.expect, r.got);
       return '<button class="row' + (r.code === lastCode ? ' last' : '') + '" type="button" data-code="' + esc(r.code) + '">' +
         '<div><div class="n">' + esc(r.name || r.code) + '</div><div class="s mono">' + esc(r.code) + '</div></div>' +
         '<div class="q">' + r.got + ' <small>/ ' + r.expect + '</small></div><div class="r r-' + res.key + '">' + res.text + '</div></button>';
     }).join('') : '<div class="empty">' + (S.items.length ? '這個篩選沒有品項' : '這張調撥單沒有品項') + '</div>';
+    $('list').innerHTML = html;
+    // 相機開著：下半部清單同步，剛掃到的那列捲到眼前
+    if (camOpen) {
+      $('camList').innerHTML = html;
+      var cur = $('camList').querySelector('.row.last');
+      if (cur) cur.scrollIntoView({ block: 'nearest' });
+    }
   }
   function renderSync() {
     var n = S.ops.length, el = $('sync');
@@ -451,7 +470,7 @@
     // 條碼表 → 品號；掃到的就是品號（BOT 瓶器類條碼＝商品代號）也算
     var code = codeOf(raw);
     var codes = byBarcode[raw] || ((byCode[code] || itemOf(code)) ? [code] : null);
-    if (!codes) { say('查無此條碼：' + raw + '（可按「手動查品項」）', true); beepErr(); return; }
+    if (!codes) { say('查無此條碼：' + raw + '（可按「查品項」）', true); beepErr(); camFlash(false, '查無此條碼', esc(raw)); return; }
     if (codes.length > 1) {
       var inList = codes.filter(function (c) { return itemOf(c); });
       if (inList.length === 1) codes = inList;
@@ -468,9 +487,9 @@
     });
   }
   // 掃到（或選到）一個品項之後：連續刷直接 +1，逐筆就跳數量鍵盤
+  //   逐筆模式開著相機時不關相機：數量鍵盤蓋在上面，按完回到相機繼續掃
   function take(code) {
     if (mode === 'each') {
-      if (camOpen) closeCam();
       if ($('typeModal').classList.contains('show')) $('typeModal').classList.remove('show');
       openQty(code);
     } else addOne(code);
@@ -488,8 +507,24 @@
     if (!i) { say('不在這張調撥單：' + nameOf(code) + '（已記 ' + got + '）', true); beepErr(); }
     else if (got > i.expect) { say('超收：' + nameOf(code) + ' 已掃 ' + got + '／應收 ' + i.expect, true); beepErr(); }
     else { say(nameOf(code) + ' +1（' + got + '／' + i.expect + '）'); beepOk(); }
-    if (camOpen) { $('camLast').textContent = lastMsg.text; $('camLast').className = lastMsg.err ? 'err' : ''; }
+    if (camOpen) {
+      $('camLast').textContent = lastMsg.text; $('camLast').className = lastMsg.err ? 'err' : '';
+      camFlash(!lastMsg.err, esc(nameOf(code)),
+        '+1　' + got + '<small>' + (i ? '／' + i.expect : '') + '</small>' + (!i ? '<small>　不在單上</small>' : got > i.expect ? '<small>　超收</small>' : ''));
+    }
     render();
+  }
+  // 相機掃到時的閃示：框變色＋中間大字，約 1.2 秒
+  var camFlashTimer = null;
+  function camFlash(ok, title, sub) {
+    if (!camOpen) return;
+    var frame = document.querySelector('.cam-frame'), box = $('camFlash');
+    frame.classList.remove('ok', 'err'); frame.classList.add(ok ? 'ok' : 'err');
+    box.className = 'show' + (ok ? '' : ' err');
+    box.querySelector('.nm').innerHTML = title;
+    box.querySelector('.ct').innerHTML = sub;
+    clearTimeout(camFlashTimer);
+    camFlashTimer = setTimeout(function () { frame.classList.remove('ok', 'err'); box.className = ''; }, 1200);
   }
   function pushOp(op) {
     op.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -709,6 +744,7 @@
   $('btnEditSave').addEventListener('click', saveEdit);
   $('btnEditCancel').addEventListener('click', closeModals);
   $('list').addEventListener('click', function (e) { var b = e.target.closest('button[data-code]'); if (b) openEdit(b.getAttribute('data-code')); });
+  $('camList').addEventListener('click', function (e) { var b = e.target.closest('button[data-code]'); if (b) openEdit(b.getAttribute('data-code')); });
 
   // ── 手動查品項／多筆候選 ───────────────────────────────
   function pickRows(list) {
@@ -850,6 +886,7 @@
     }).catch(function () {});
   }
   function onCamText(t) {
+    if (document.querySelector('.modal.show')) return;   // 正在改數量／選品項：相機暫停，不算
     if (!t) { if (++camMiss >= CAM_GONE_FRAMES) camLast = ''; return; }
     camMiss = 0;
     if (t !== camLast) { camLast = t; onScan(t); }
@@ -918,6 +955,7 @@
     camOpen = true; camLast = ''; camMiss = 0;
     $('camLast').textContent = mode === 'each' ? '條碼放進框內，掃到後輸入數量' : '條碼放進框內，每掃到一次 +1'; $('camLast').className = '';
     $('cam').classList.add('show');
+    render();   // 下半部清單
     startCam();
   }
   function closeCam() { camOpen = false; stopCam(); $('cam').classList.remove('show'); window.focus(); }
