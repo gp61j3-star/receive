@@ -42,10 +42,6 @@
   #card .cnt b { display:block; font-size:40px; line-height:1.05; font-variant-numeric:tabular-nums; color:var(--accent); }
   #card .cnt span { font-size:13px; color:var(--mid); }
   #card .wait { flex:1; text-align:center; color:var(--mid); font-size:17px; }
-  #card { flex-wrap:wrap; }
-  #card .boxes { flex-basis:100%; display:flex; gap:6px; }
-  #card .boxes button { flex:1; min-height:46px; padding:4px; background:var(--soft); border-color:var(--accent); color:var(--accent); font-size:17px; font-weight:700; line-height:1.15; }
-  #card .boxes button small { display:block; font-size:12px; font-weight:400; color:var(--mid); }
 
   #msg { margin:0 10px; min-height:32px; padding:5px 12px; border-radius:8px; font-size:15px; font-weight:600; color:var(--ok); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #msg.err { background:#fbeeec; color:var(--err); white-space:normal; }
@@ -109,6 +105,10 @@
   .pick .n { font-size:17px; font-weight:600; }
   .pick .s { font-size:13px; color:var(--mute); }
   #editQty { font-size:56px; font-weight:700; text-align:center; color:var(--accent); font-variant-numeric:tabular-nums; padding:6px 0; }
+  #editBoxes { display:flex; gap:6px; padding:0 16px 8px; }
+  #editBoxes:empty { display:none; }
+  #editBoxes button { flex:1; min-height:50px; padding:4px; background:var(--soft); border-color:var(--accent); color:var(--accent); font-size:18px; font-weight:700; line-height:1.15; }
+  #editBoxes button small { display:block; font-size:12px; font-weight:400; color:var(--mid); }
   #pad { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; padding:0 16px 10px; }
   #pad button { min-height:54px; font-size:24px; font-weight:600; }
   #pad button.fn { font-size:16px; color:var(--mid); background:var(--soft); }
@@ -239,6 +239,7 @@
       <p id="editMeta"></p>
     </div>
     <div id="editQty">0</div>
+    <div id="editBoxes"></div>
     <div id="pad"></div>
     <div class="sheet-f"><button id="btnEditCancel" type="button">取消</button><button id="btnEditSave" class="main" type="button">改成這個數量</button></div>
   </div>
@@ -270,7 +271,7 @@
     <div id="camFlash"><div class="nm"></div><div class="ct"></div></div>
   </div>
   <div class="cam-bar">
-    <div id="camLast">條碼放進框內，每掃到一次 +1</div>
+    <div id="camLast">條碼停在框內，每 1.5 秒算一件</div>
     <button id="btnCamFlip" type="button" class="hidden">切換鏡頭</button>
     <button id="btnCamClose" type="button">完成</button>
   </div>
@@ -382,25 +383,20 @@
   }
   function renderCard() {
     var card = $('card');
-    if (!lastCode) { card.className = ''; card.innerHTML = '<div class="wait">掃商品條碼，每掃一次 +1<br>整盒到貨：掃一件後按「整盒」；點清單可直接改數量</div>'; return; }
+    if (!lastCode) { card.className = ''; card.innerHTML = '<div class="wait">掃商品條碼，每掃一次 +1<br>點清單可直接改數量（整盒在數字鍵盤裡）</div>'; return; }
     var i = itemOf(lastCode), exp = i ? i.expect : 0, got = counts()[lastCode] || 0, r = resultOf(exp, got);
     card.className = r.key === 'same' ? 'ok' : (r.key === 'over' || r.key === 'extra') ? 'err' : '';
-    var opts = boxOptions(lastCode);
     card.innerHTML = '<div class="info"><div class="nm">' + esc(nameOf(lastCode)) + '</div><div class="cd mono">' + esc(lastCode) + '・' + esc(r.text) + '</div></div>' +
-      '<div class="cnt"><b>' + got + '</b><span>' + (exp ? '應收 ' + exp : '不在清單') + '</span></div>' +
-      (opts.length ? '<div class="boxes">' + opts.map(function (b) {
-        return '<button type="button" data-box="' + b.n + '" data-label="' + b.label + '">' + b.label + ' ' + b.n + '<small>' + b.sub + '</small></button>';
-      }).join('') + '</div>' : '');
+      '<div class="cnt"><b>' + got + '</b><span>' + (exp ? '應收 ' + exp : '不在清單') + '</span></div>';
   }
 
-  // ── 整盒／整箱（規則同批號盤點）──────────────────────────
-  //   剛掃完一件就按：這一件改算整盒（+1 改成 +N）；再按一次＝再加一整盒
-  var B_240 = { label: '整箱', n: 240, sub: '12盒/箱' }, B_180 = { label: '整箱', n: 180, sub: '12盒/箱' };
+  // ── 整盒／整箱：出現在數字鍵盤上，按了就把數字填進去 ─────────────
+  //   門市不會收到 2g、5g、15g 整箱，只留整盒
   var B_49 = { label: '整箱', n: 49, sub: '49/箱' }, B_36 = { label: '整箱', n: 36, sub: '36/箱' }, B_16 = { label: '整箱', n: 16, sub: '16/箱' };
   var B_H20 = { label: '整盒', n: 20, sub: '20/盒' }, B_H15 = { label: '整盒', n: 15, sub: '15/盒' };
   var B_BARE24 = { label: '裸瓶', n: 24, sub: '無鐵罐裝' };
   var BOX = {
-    g:  { 2: [B_H20, B_240], 5: [B_H20, B_240], 15: [B_H15, B_180], 50: [B_49] },
+    g:  { 2: [B_H20], 5: [B_H20], 15: [B_H15], 50: [B_49] },
     ml: { 15: [B_H15, B_BARE24], 50: [B_49], 100: [B_49], 200: [B_36], 500: [B_16], 1000: [B_16] }
   };
   function boxOptions(code) {
@@ -412,22 +408,6 @@
     var isOil = /^FLE\d/.test(code);
     return ((isOil || unit === 'g') ? BOX.g : BOX.ml)[size] || [];
   }
-  var boxPending = false;   // 剛掃一件、還沒按整盒
-  function applyBox(n, label) {
-    if (!lastCode) return;
-    var add = boxPending ? n - 1 : n;
-    boxPending = false;
-    if (add > 0) pushOp({ op: 'add', code: lastCode, name: nameOf(lastCode), n: add });
-    var i = itemOf(lastCode), got = counts()[lastCode] || 0;
-    var text = nameOf(lastCode) + ' ' + label + ' ' + n + '（' + got + (i ? '／' + i.expect : '') + '）';
-    if (i && got > i.expect) { say('超收：' + text, true); beepErr(); }
-    else { say(text); beepOk(); }
-    render();
-  }
-  $('card').addEventListener('click', function (e) {
-    var b = e.target.closest('button[data-box]');
-    if (b) applyBox(Number(b.getAttribute('data-box')), b.getAttribute('data-label'));
-  });
   function renderList(rows) {
     var list = rows.filter(function (r) {
       if (filter === 'todo') return r.expect && r.got < r.expect;
@@ -502,7 +482,7 @@
   renderMode();
   function addOne(code) {
     pushOp({ op: 'add', code: code, name: nameOf(code), n: 1 });
-    lastCode = code; boxPending = true;
+    lastCode = code;
     var i = itemOf(code), got = counts()[code] || 0;
     if (!i) { say('不在這張調撥單：' + nameOf(code) + '（已記 ' + got + '）', true); beepErr(); }
     else if (got > i.expect) { say('超收：' + nameOf(code) + ' 已掃 ' + got + '／應收 ' + i.expect, true); beepErr(); }
@@ -586,7 +566,7 @@
   function showSetup() {
     $('setup').classList.remove('hidden');
     renderStores(); renderStaff(); renderBatches();
-    note(S.ops.length ? '還有 ' + S.ops.length + ' 筆待上傳，上傳完才能換門市或調撥單（一直傳不上去可以按下面「清除這台手機的暫存」）' : '');
+    note(S.ops.length ? '還有 ' + S.ops.length + ' 筆待上傳，上傳完才能換門市或調撥單' : '');
     $('btnReset').classList.toggle('hidden', !S.ops.length);
   }
   // 傳不上去的暫存（例如分頁被刪掉重建）會卡住換單：按兩次清掉這台手機的暫存與目前這張單
@@ -658,7 +638,7 @@
       S.items = res.items; S.got = res.got || {}; S.done = !!res.done;
       if (!same) S.ops = [];
       S.staff = pickedStaff();
-      lastCode = ''; boxPending = false; persist();
+      lastCode = ''; persist();
       $('setup').classList.add('hidden'); note('');
       say(S.items.length ? '開始掃描：' + res.no + ' 應收 ' + S.items.length + ' 品' : '這張調撥單沒有品項', !S.items.length);
       render(); flush(); window.focus();
@@ -697,9 +677,22 @@
     $('editName').textContent = nameOf(code);
     $('editMeta').textContent = code + '・' + (i ? '應收 ' + i.expect : '不在這張調撥單');
     $('editQty').textContent = editVal;
+    renderEditBoxes(code);
     $('btnEditSave').textContent = '改成這個數量';
     $('editModal').classList.add('show');
   }
+  // 整盒／整箱：按了就把數字填進去
+  function renderEditBoxes(code) {
+    $('editBoxes').innerHTML = boxOptions(code).map(function (b) {
+      return '<button type="button" data-box="' + b.n + '">' + b.label + ' ' + b.n + '<small>' + b.sub + '</small></button>';
+    }).join('');
+  }
+  $('editBoxes').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-box]');
+    if (!b) return;
+    editVal = b.getAttribute('data-box');
+    $('editQty').textContent = editVal;
+  });
   // 逐筆輸入數量：掃到後輸入這次收到幾件（加上去）
   function openQty(code) {
     editCode = code; editVal = ''; editAdd = true;
@@ -707,6 +700,7 @@
     $('editName').textContent = nameOf(code);
     $('editMeta').textContent = code + '・' + (i ? '應收 ' + i.expect : '不在這張調撥單') + '・已收 ' + got;
     $('editQty').textContent = '0';
+    renderEditBoxes(code);
     $('btnEditSave').textContent = '加入這個數量';
     $('editModal').classList.add('show');
     beepOk();
@@ -731,7 +725,7 @@
     } else if (n !== (counts()[editCode] || 0)) {
       pushOp({ op: 'set', code: editCode, name: nameOf(editCode), n: n }); say('已改：' + nameOf(editCode) + ' 實收 ' + n);
     }
-    lastCode = editCode; boxPending = false; closeModals(); render();
+    lastCode = editCode; closeModals(); render();
   }
   $('pad').innerHTML = ['7', '8', '9', '4', '5', '6', '1', '2', '3'].map(function (d) { return '<button type="button" data-d="' + d + '">' + d + '</button>'; }).join('') +
     '<button type="button" class="fn" data-fn="clear">清除</button><button type="button" data-d="0">0</button><button type="button" class="fn" data-fn="back">退格</button>';
@@ -831,10 +825,11 @@
   });
 
   // ── 相機掃描（做法同批號盤點：zxing-wasm 為主，讀不動改用 @zxing/library）────
-  //   連續：同一個條碼一直在畫面裡不重複算；移開（連續幾張沒讀到）再拿回來才 +1
+  //   連續：同一個條碼停在框裡每 1.5 秒算一件，換別的品項馬上算
+  //   逐筆：同一個條碼一直在畫面裡不重複跳鍵盤，移開再拿回來才算
   var ZXOPT = { formats: ['EAN-13', 'EAN-8', 'UPC-A', 'UPC-E', 'Code128', 'Code39', 'ITF'], tryHarder: true, tryRotate: true, tryInvert: false, tryDownscale: true, maxNumberOfSymbols: 1 };
-  var CAM_GONE_FRAMES = 3, WASM_FAIL_MAX = 5;
-  var camOpen = false, camReader = null, camGen = 0, camTimer = null, camDevices = [], camIdx = -1, camLast = '', camMiss = 0, wasmBroken = false;
+  var CAM_GONE_FRAMES = 3, WASM_FAIL_MAX = 5, CAM_REPEAT_MS = 1500;
+  var camOpen = false, camReader = null, camGen = 0, camTimer = null, camDevices = [], camIdx = -1, camLast = '', camLastAt = 0, camMiss = 0, wasmBroken = false;
   function firstText(r) { return r && r.length && r[0].text ? String(r[0].text) : ''; }
   function hasLib() { return !!(window.ZXing && ZXing.BrowserMultiFormatReader); }
   function stopCam() {
@@ -886,10 +881,11 @@
     }).catch(function () {});
   }
   function onCamText(t) {
-    if (document.querySelector('.modal.show')) return;   // 正在改數量／選品項：相機暫停，不算
+    if (document.querySelector('.modal.show')) { camLastAt = Date.now(); return; }   // 正在改數量／選品項：相機暫停，不算
     if (!t) { if (++camMiss >= CAM_GONE_FRAMES) camLast = ''; return; }
     camMiss = 0;
-    if (t !== camLast) { camLast = t; onScan(t); }
+    var now = Date.now();
+    if (t !== camLast || (mode === 'cont' && now - camLastAt >= CAM_REPEAT_MS)) { camLast = t; camLastAt = now; onScan(t); }
   }
   // 取畫面中央偏寬的區域（一維條碼是橫的），縮到最寬 1280
   function frameData(v) {
@@ -953,7 +949,7 @@
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { say('這個瀏覽器不能用相機，請用 Chrome 或 Safari 開啟', true); return; }
     unlockAudio();
     camOpen = true; camLast = ''; camMiss = 0;
-    $('camLast').textContent = mode === 'each' ? '條碼放進框內，掃到後輸入數量' : '條碼放進框內，每掃到一次 +1'; $('camLast').className = '';
+    $('camLast').textContent = mode === 'each' ? '條碼放進框內，掃到後輸入數量' : '條碼停在框內，每 1.5 秒算一件'; $('camLast').className = '';
     $('cam').classList.add('show');
     render();   // 下半部清單
     startCam();
