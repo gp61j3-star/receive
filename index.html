@@ -50,8 +50,14 @@
   #msg { margin:0 10px; min-height:32px; padding:5px 12px; border-radius:8px; font-size:15px; font-weight:600; color:var(--ok); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #msg.err { background:#fbeeec; color:var(--err); white-space:normal; }
 
-  .tools { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; padding:0 10px; }
+  .tools { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; padding:0 10px; }
   .tools button { min-height:48px; font-size:16px; font-weight:600; color:var(--accent); }
+  .tools .modes { grid-column:1 / -1; display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .tools .modes button { min-height:40px; font-size:15px; }
+  .tools .modes button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+  #typeInput { width:100%; margin-top:10px; padding:12px 14px; font-size:22px; border:2px solid var(--accent); border-radius:10px; outline:none; font-family:ui-monospace,Consolas,Menlo,monospace; user-select:text; -webkit-user-select:text; }
+  #typeMsg { min-height:1.5em; }
+  #typeMsg.err { color:var(--err); font-weight:700; }
 
   #listBox { min-height:0; margin:0 10px; display:grid; grid-template-rows:auto minmax(0,1fr); background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
   #filters { display:flex; border-bottom:1px solid var(--line); }
@@ -141,7 +147,9 @@
     #card .wait { font-size:14px; }
     #msg { margin:0 8px; min-height:26px; padding:3px 10px; font-size:13px; }
     .tools { gap:4px; padding:0 8px; }
-    .tools button { min-height:44px; font-size:15px; }
+    .tools button { min-height:44px; font-size:14px; padding:0 2px; }
+    .tools .modes { gap:4px; }
+    .tools .modes button { min-height:36px; font-size:14px; }
     #listBox { margin:0 8px; }
     #btnFinish { margin:0 8px; min-height:46px; font-size:16px; }
   }
@@ -163,9 +171,14 @@
   <div id="card"></div>
   <div id="msg"></div>
   <div class="tools">
+    <div class="modes">
+      <button type="button" data-mode="cont">連續刷 +1</button>
+      <button type="button" data-mode="each">逐筆輸入數量</button>
+    </div>
     <button id="btnCam" type="button">相機掃描</button>
     <button id="btnShot" type="button">拍照解析</button>
-    <button id="btnSearch" type="button">手動查品項</button>
+    <button id="btnType" type="button">輸入條碼</button>
+    <button id="btnSearch" type="button">查品項</button>
   </div>
   <input type="file" id="fShot" accept="image/*" capture="environment" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
   <div id="listBox">
@@ -217,6 +230,17 @@
     <div id="editQty">0</div>
     <div id="pad"></div>
     <div class="sheet-f"><button id="btnEditCancel" type="button">取消</button><button id="btnEditSave" class="main" type="button">改成這個數量</button></div>
+  </div>
+</div>
+
+<div id="typeModal" class="modal">
+  <div class="sheet">
+    <div class="sheet-h">
+      <h3>輸入條碼或品號</h3>
+      <p id="typeMsg">輸入後按 Enter 或「送出」，可以一直輸入下一個</p>
+      <input id="typeInput" type="text" inputmode="text" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" placeholder="條碼或品號">
+    </div>
+    <div class="sheet-f"><button id="btnTypeClose" type="button">完成</button><button id="btnTypeOk" class="main" type="button">送出</button></div>
   </div>
 </div>
 
@@ -432,8 +456,30 @@
       if (inList.length === 1) codes = inList;
       else { openPick(inList.length ? inList : codes, raw); return; }
     }
-    addOne(codes[0]);
+    take(codes[0]);
   }
+
+  // ── 掃描模式：連續刷 +1／逐筆輸入數量 ───────────────────
+  var mode = load('recv.mode', 'cont') === 'each' ? 'each' : 'cont';
+  function renderMode() {
+    Array.prototype.forEach.call(document.querySelectorAll('.modes button'), function (b) {
+      b.classList.toggle('on', b.getAttribute('data-mode') === mode);
+    });
+  }
+  // 掃到（或選到）一個品項之後：連續刷直接 +1，逐筆就跳數量鍵盤
+  function take(code) {
+    if (mode === 'each') {
+      if (camOpen) closeCam();
+      if ($('typeModal').classList.contains('show')) $('typeModal').classList.remove('show');
+      openQty(code);
+    } else addOne(code);
+  }
+  document.querySelector('.modes').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-mode]'); if (!b) return;
+    mode = b.getAttribute('data-mode'); save('recv.mode', mode); renderMode();
+    say(mode === 'each' ? '逐筆輸入數量：掃到後輸入數量' : '連續刷：每掃一次 +1');
+  });
+  renderMode();
   function addOne(code) {
     pushOp({ op: 'add', code: code, name: nameOf(code), n: 1 });
     lastCode = code; boxPending = true;
@@ -592,14 +638,27 @@
     Array.prototype.forEach.call($('filters').children, function (x) { x.classList.toggle('on', x === b); });
     render();
   });
-  var editCode = '', editVal = '';
+  var editCode = '', editVal = '', editAdd = false;
+  // 點清單：直接改成某個數量
   function openEdit(code) {
-    editCode = code; editVal = String(counts()[code] || 0);
+    editCode = code; editVal = String(counts()[code] || 0); editAdd = false;
     var i = itemOf(code);
     $('editName').textContent = nameOf(code);
     $('editMeta').textContent = code + '・' + (i ? '應收 ' + i.expect : '不在這張調撥單');
     $('editQty').textContent = editVal;
+    $('btnEditSave').textContent = '改成這個數量';
     $('editModal').classList.add('show');
+  }
+  // 逐筆輸入數量：掃到後輸入這次收到幾件（加上去）
+  function openQty(code) {
+    editCode = code; editVal = ''; editAdd = true;
+    var i = itemOf(code), got = counts()[code] || 0;
+    $('editName').textContent = nameOf(code);
+    $('editMeta').textContent = code + '・' + (i ? '應收 ' + i.expect : '不在這張調撥單') + '・已收 ' + got;
+    $('editQty').textContent = '0';
+    $('btnEditSave').textContent = '加入這個數量';
+    $('editModal').classList.add('show');
+    beepOk();
   }
   function editKey(e) {
     if (/^\d$/.test(e.key)) { e.preventDefault(); editDigit(e.key); }
@@ -610,7 +669,17 @@
   function editDigit(d) { if (editVal === '0') editVal = ''; if (editVal.length < 4) editVal += d; $('editQty').textContent = editVal; }
   function saveEdit() {
     var n = parseInt(editVal || '0', 10);
-    if (n !== (counts()[editCode] || 0)) { pushOp({ op: 'set', code: editCode, name: nameOf(editCode), n: n }); say('已改：' + nameOf(editCode) + ' 實收 ' + n); }
+    if (editAdd) {
+      if (n > 0) {
+        pushOp({ op: 'add', code: editCode, name: nameOf(editCode), n: n });
+        var i = itemOf(editCode), got = counts()[editCode] || 0;
+        if (!i) { say('不在這張調撥單：' + nameOf(editCode) + ' +' + n + '（已記 ' + got + '）', true); beepErr(); }
+        else if (got > i.expect) { say('超收：' + nameOf(editCode) + ' +' + n + '，已收 ' + got + '／應收 ' + i.expect, true); beepErr(); }
+        else { say(nameOf(editCode) + ' +' + n + '（' + got + '／' + i.expect + '）'); beepOk(); }
+      }
+    } else if (n !== (counts()[editCode] || 0)) {
+      pushOp({ op: 'set', code: editCode, name: nameOf(editCode), n: n }); say('已改：' + nameOf(editCode) + ' 實收 ' + n);
+    }
     lastCode = editCode; boxPending = false; closeModals(); render();
   }
   $('pad').innerHTML = ['7', '8', '9', '4', '5', '6', '1', '2', '3'].map(function (d) { return '<button type="button" data-d="' + d + '">' + d + '</button>'; }).join('') +
@@ -642,7 +711,7 @@
   }
   function openSearch() {
     if (!S.batch) return;
-    $('searchTitle').textContent = '查品項（選了就 +1）';
+    $('searchTitle').textContent = mode === 'each' ? '查品項（選了就輸入數量）' : '查品項（選了就 +1）';
     $('searchInput').classList.remove('hidden'); $('searchInput').value = '';
     $('results').innerHTML = pickRows(searchProducts(''));
     $('searchModal').classList.add('show'); $('searchInput').focus();
@@ -658,7 +727,33 @@
     $('searchInput').blur(); window.focus();
   }
   $('searchInput').addEventListener('input', function () { $('results').innerHTML = pickRows(searchProducts(this.value)); });
-  $('results').addEventListener('click', function (e) { var b = e.target.closest('button[data-code]'); if (b) { closeModals(); addOne(b.getAttribute('data-code')); } });
+  $('results').addEventListener('click', function (e) { var b = e.target.closest('button[data-code]'); if (b) { closeModals(); take(b.getAttribute('data-code')); } });
+
+  // ── 輸入條碼（手機鍵盤）：可以一直輸入下一個 ─────────────
+  function openType() {
+    if (!S.batch) { say('請先選調撥單', true); return; }
+    $('typeMsg').textContent = '輸入後按 Enter 或「送出」，可以一直輸入下一個'; $('typeMsg').className = '';
+    $('typeInput').value = '';
+    $('typeModal').classList.add('show');
+    $('typeInput').focus();   // 要在按鈕的點擊裡直接 focus，手機鍵盤才會彈出
+  }
+  function submitType() {
+    var v = $('typeInput').value.trim();
+    if (!v) { $('typeInput').focus(); return; }
+    $('typeInput').value = '';
+    onScan(v);
+    // 連續刷：留在輸入框，顯示剛剛的結果；逐筆：take() 已關掉輸入框改開數量鍵盤
+    if ($('typeModal').classList.contains('show')) {
+      $('typeMsg').textContent = lastMsg.text; $('typeMsg').className = lastMsg.err ? 'err' : '';
+      $('typeInput').focus();
+    }
+  }
+  $('btnType').addEventListener('click', openType);
+  $('btnTypeOk').addEventListener('click', submitType);
+  $('btnTypeClose').addEventListener('click', closeModals);
+  $('typeInput').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); submitType(); }
+  });
   $('btnSearchClose').addEventListener('click', closeModals);
   $('btnSearch').addEventListener('click', openSearch);
 
@@ -805,7 +900,7 @@
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { say('這個瀏覽器不能用相機，請用 Chrome 或 Safari 開啟', true); return; }
     unlockAudio();
     camOpen = true; camLast = ''; camMiss = 0;
-    $('camLast').textContent = '條碼放進框內，每掃到一次 +1'; $('camLast').className = '';
+    $('camLast').textContent = mode === 'each' ? '條碼放進框內，掃到後輸入數量' : '條碼放進框內，每掃到一次 +1'; $('camLast').className = '';
     $('cam').classList.add('show');
     startCam();
   }
