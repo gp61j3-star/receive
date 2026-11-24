@@ -18,7 +18,6 @@
   .mono { font-family:ui-monospace,Consolas,Menlo,monospace; }
   .hidden { display:none !important; }
 
-  /* 由上到下：標題、統計、目前品項、訊息、工具列、清單（唯一可伸縮）、完成驗收 */
   #app { height:100dvh; display:grid; grid-template-rows:auto auto auto auto auto minmax(0,1fr) auto; gap:8px; padding:0 0 10px; }
   header { display:flex; align-items:center; gap:12px; padding:10px 14px; background:var(--accent); color:#fff; }
   header h1 { font-size:18px; font-weight:700; letter-spacing:.06em; }
@@ -121,14 +120,12 @@
   .finish-sum { padding:10px 16px; font-size:16px; line-height:1.9; }
   .finish-sum b { font-variant-numeric:tabular-nums; }
 
-  /* 相機：上半部相機、中間工具列、下半部清單（邊掃邊看、點列可改數量） */
   #cam { position:fixed; inset:0; z-index:50; display:none; flex-direction:column; background:#111a24; }
   #cam.show { display:flex; }
   .cam-view { position:relative; flex:0 0 44vh; min-height:0; overflow:hidden; display:flex; align-items:center; justify-content:center; }
   #camList { flex:1; min-height:0; overflow:auto; -webkit-overflow-scrolling:touch; background:#fff; }
   #camVideo { width:100%; height:100%; object-fit:cover; }
   .cam-frame { position:absolute; width:min(84vw,640px); height:min(20vh,200px); border:3px solid #fff; border-radius:12px; box-shadow:0 0 0 2000px rgba(17,26,36,.35); pointer-events:none; transition:border-color .15s, box-shadow .15s; }
-  /* 掃到的瞬間：框閃顏色，畫面中間跳出品名與數量 */
   .cam-frame.ok  { border-width:6px; border-color:#3ecf7f; box-shadow:0 0 0 2000px rgba(47,107,74,.45); }
   .cam-frame.err { border-width:6px; border-color:#ff6b5e; box-shadow:0 0 0 2000px rgba(151,57,47,.45); }
   #camFlash { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:min(86vw,560px); padding:16px 20px; border-radius:16px; background:rgba(47,107,74,.94); color:#fff; text-align:center; pointer-events:none; display:none; }
@@ -148,7 +145,6 @@
   #focusTip.show { display:flex; }
   #focusTip div { background:var(--err); color:#fff; font-size:17px; font-weight:700; padding:10px 20px; border-radius:10px; }
 
-  /* 手機：縮小上半部，讓清單留得下空間 */
   @media (max-width:600px), (max-height:640px) {
     #app { gap:6px; padding-bottom:8px; }
     header { padding:8px 10px; gap:8px; }
@@ -305,14 +301,9 @@
   function load(k, d) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
   function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
   function codeOf(s) { return String(s == null ? '' : s).replace(/\s+/g, '').toUpperCase(); }
-  // ── 後端（入庫驗收 Apps Script 的 /exec 網址與通行碼）────────────
-  //   網址用部署後拿到的 https://script.google.com/macros/s/…/exec（不要用 /a/macros/網域/ 那種）
-  //   通行碼要和 入庫驗收.gs 的 RECV_API_KEY 一樣
   var API_URL = 'https://script.google.com/macros/s/AKfycbyJlbr-CrC92V_QIu7k6LkF62Y1cAG1UT9cPl9wfAdk560AvLQcXQPtnxzS5vmPtC8a0Q/exec';
   var API_KEY = 'xwWIMabdbjw3S55gWnB269-M';
   var hasApi = !!API_URL;
-  // 呼叫後端：回傳 Promise，成功給 data，失敗丟出錯誤訊息
-  //   用 text/plain 送 JSON，瀏覽器不會先送 CORS 預檢，Apps Script 才收得到
   function api(action) {
     var args = Array.prototype.slice.call(arguments, 1);
     return fetch(API_URL, {
@@ -328,7 +319,6 @@
     });
   }
 
-  // S：門市、人員、調撥單應收、伺服器實收、待上傳動作
   var S = load(KEY_SESSION, null) || {};
   S.ops = S.ops || []; S.got = S.got || {}; S.items = S.items || []; S.staff = S.staff || [];
   function persist() { save(KEY_SESSION, S); }
@@ -346,10 +336,8 @@
     });
   }
 
-  // ── 調撥出庫單：掃要出貨的商品與數量，送出後後端建分頁並轉出 POS 調撥作業匯入檔 ──
-  //   草稿存在這台手機（OUT），送出成功才清掉
   var KEY_OUT = 'recv.out.v1';
-  var OUT = load(KEY_OUT, null);   // { on, store, staff, id, lines:[{code,name,n}] }
+  var OUT = load(KEY_OUT, null);
   function isOut() { return !!(OUT && OUT.on); }
   function ready() { return isOut() || !!S.batch; }
   function persistOut() { save(KEY_OUT, OUT); }
@@ -363,7 +351,6 @@
   }
   function outTotal() { var t = 0; OUT.lines.forEach(function (l) { t += l.n; }); return t; }
 
-  // ── 數量 ───────────────────────────────────────────────
   function counts() {
     var c = {};
     if (isOut()) { OUT.lines.forEach(function (l) { c[l.code] = l.n; }); return c; }
@@ -388,7 +375,6 @@
     return out;
   }
 
-  // ── 聲音 ───────────────────────────────────────────────
   var audio = null;
   function unlockAudio() { try { if (!audio) { var AC = window.AudioContext || window.webkitAudioContext; if (AC) audio = new AC(); } if (audio && audio.state === 'suspended') audio.resume(); } catch (e) {} }
   function tone(f, ms, at) {
@@ -402,7 +388,6 @@
   function beepOk() { tone(880, 70); tone(1320, 90, 0.08); }
   function beepErr() { tone(220, 220); tone(220, 260, 0.28); }
 
-  // ── 畫面 ───────────────────────────────────────────────
   function say(text, err) { lastMsg = { text: text || '', err: !!err }; $('msg').textContent = lastMsg.text; $('msg').className = err ? 'err' : ''; }
   function renderHeader() {
     var st = stores.filter(function (s) { return s.code === S.store; })[0];
@@ -426,8 +411,6 @@
       '<div class="cnt"><b>' + got + '</b><span>' + (exp ? '應收 ' + exp : '不在清單') + '</span></div>';
   }
 
-  // ── 整盒／整箱：出現在數字鍵盤上，按了就把數字填進去 ─────────────
-  //   門市不會收到 2g、5g、15g 整箱，只留整盒
   var B_49 = { label: '整箱', n: 49, sub: '49/箱' }, B_36 = { label: '整箱', n: 36, sub: '36/箱' }, B_16 = { label: '整箱', n: 16, sub: '16/箱' };
   var B_H20 = { label: '整盒', n: 20, sub: '20/盒' }, B_H15 = { label: '整盒', n: 15, sub: '15/盒' };
   var B_BARE24 = { label: '裸瓶', n: 24, sub: '無鐵罐裝' };
@@ -457,7 +440,6 @@
         '<div class="q">' + r.got + ' <small>/ ' + r.expect + '</small></div><div class="r r-' + res.key + '">' + res.text + '</div></button>';
     }).join('') : '<div class="empty">' + (S.items.length ? '這個篩選沒有品項' : '這張調撥單沒有品項') + '</div>';
     $('list').innerHTML = html;
-    // 相機開著：下半部清單同步，剛掃到的那列捲到眼前
     if (camOpen) {
       $('camList').innerHTML = html;
       var cur = $('camList').querySelector('.row.last');
@@ -482,7 +464,6 @@
     renderHeader(); renderSummary(rows); renderCard(); renderList(rows); renderSync(); renderFinish();
   }
 
-  // 調撥出庫單畫面：標題、件數、剛掃的品項、清單、送出鈕
   function renderOut() {
     var st = stores.filter(function (s) { return s.code === OUT.store; })[0];
     $('btnWho').innerHTML = esc('調撥出庫・' + (st ? st.name : OUT.store)) + '<small>' + esc((OUT.staff || []).join('、')) + '</small>';
@@ -508,11 +489,9 @@
     $('btnFinish').textContent = '送出調撥出庫單' + (OUT.lines.length ? '（' + OUT.lines.length + ' 品 ' + outTotal() + ' 件）' : '');
   }
 
-  // ── 掃描 ───────────────────────────────────────────────
   function onScan(raw) {
     raw = String(raw || '').normalize('NFKC').trim();
     if (!raw || !ready() || !$('setup').classList.contains('hidden')) return;
-    // 條碼表 → 品號；掃到的就是品號（BOT 瓶器類條碼＝商品代號）也算
     var code = codeOf(raw);
     var codes = byBarcode[raw] || ((byCode[code] || itemOf(code)) ? [code] : null);
     if (!codes) { say('查無此條碼：' + raw + '（可按「查品項」）', true); beepErr(); camFlash(false, '查無此條碼', esc(raw)); return; }
@@ -524,15 +503,12 @@
     take(codes[0]);
   }
 
-  // ── 掃描模式：連續刷 +1／逐筆輸入數量 ───────────────────
   var mode = load('recv.mode', 'cont') === 'each' ? 'each' : 'cont';
   function renderMode() {
     Array.prototype.forEach.call(document.querySelectorAll('.modes button'), function (b) {
       b.classList.toggle('on', b.getAttribute('data-mode') === mode);
     });
   }
-  // 掃到（或選到）一個品項之後：連續刷直接 +1，逐筆就跳數量鍵盤
-  //   逐筆模式開著相機時不關相機：數量鍵盤蓋在上面，按完回到相機繼續掃
   function take(code) {
     if (mode === 'each') {
       if ($('typeModal').classList.contains('show')) $('typeModal').classList.remove('show');
@@ -569,7 +545,6 @@
     }
     render();
   }
-  // 相機掃到時的閃示：框變色＋中間大字，約 1.2 秒
   var camFlashTimer = null;
   function camFlash(ok, title, sub) {
     if (!camOpen) return;
@@ -586,7 +561,6 @@
     S.ops.push(op); persist(); scheduleSync();
   }
 
-  // 掃描槍（鍵盤輸入）：一串字元 + Enter，或停頓後自動送出
   var burst = '', burstTimer = null;
   function anyModal() { return !$('setup').classList.contains('hidden') || document.querySelector('.modal.show'); }
   function flushBurst() { var b = burst.trim(); burst = ''; if (b.length >= 4) onScan(b); }
@@ -609,7 +583,6 @@
   window.addEventListener('focus', function () { $('focusTip').classList.remove('show'); });
   document.addEventListener('pointerdown', function () { unlockAudio(); $('focusTip').classList.remove('show'); }, true);
 
-  // ── 同步 ───────────────────────────────────────────────
   function scheduleSync() { renderSync(); clearTimeout(syncTimer); syncTimer = setTimeout(flush, SYNC_IDLE_MS); }
   function expectMap() { var m = {}; S.items.forEach(function (i) { if (i.expect) m[i.code] = [i.expect, i.name]; }); return m; }
   function flush() {
@@ -634,20 +607,17 @@
   function fail() { syncFailed = true; renderSync(); clearTimeout(syncTimer); syncTimer = setTimeout(flush, RETRY_MS); }
   window.addEventListener('online', flush);
 
-  // ── 選門市、人員、調撥單 ───────────────────────────────
   var staffCache = {};
   function note(t, err) { $('note').textContent = t || ''; $('note').className = err ? 'err' : ''; }
   function pickedStaff() { return load('recv.staff.' + S.store, []); }
   function showSetup() {
     if (isOut()) { OUT.on = false; persistOut(); lastCode = ''; }
-    // 門市每次都要自己點，不沿用上次的（避免選錯店）；還有待上傳的紀錄時才保留
     if (!S.ops.length && S.store) { S.store = ''; persist(); }
     $('setup').classList.remove('hidden');
     renderStores(); renderStaff(); renderBatches();
     note(S.ops.length ? '還有 ' + S.ops.length + ' 筆待上傳，上傳完才能換門市或調撥單' : '');
     $('btnReset').classList.toggle('hidden', !S.ops.length);
   }
-  // 傳不上去的暫存（例如分頁被刪掉重建）會卡住換單：按兩次清掉這台手機的暫存與目前這張單
   var resetArmed = false, resetTimer = null;
   $('btnReset').addEventListener('click', function () {
     if (!resetArmed) {
@@ -745,7 +715,6 @@
     renderStaff(); renderBatches();
   });
   $('batchList').addEventListener('click', function (e) { var b = e.target.closest('button[data-id]'); if (b) openBatch(b.getAttribute('data-id')); });
-  // 新增（或繼續）調撥出庫單：草稿跟著門市，換門市就開新的一張
   function openOut() {
     if (!OUT || OUT.store !== S.store) OUT = { store: S.store, id: newId(), lines: [] };
     OUT.on = true; OUT.staff = pickedStaff(); persistOut();
@@ -755,7 +724,6 @@
   }
   $('btnOut').addEventListener('click', openOut);
 
-  // 刪除要按兩次：第一次變成「再按一次…」，4 秒內再按才執行
   var armedBtn = null, armTimer = null;
   function twoTap(btn, armedText, fn) {
     if (armedBtn !== btn) {
@@ -775,7 +743,6 @@
     });
   });
 
-  // 已送出的調撥出庫單：列出本店最近幾張，可以整張刪除（分頁與匯入檔一起刪）
   var outCache = {}, outLoading = {};
   function renderOutList() {
     var store = S.store, list = outCache[store];
@@ -808,7 +775,6 @@
   });
   $('btnWho').addEventListener('click', function () { delete batchCache[S.store]; delete outCache[S.store]; showSetup(); });
 
-  // ── 清單、篩選、改數量 ─────────────────────────────────
   $('filters').addEventListener('click', function (e) {
     var b = e.target.closest('button[data-f]'); if (!b) return;
     filter = b.getAttribute('data-f');
@@ -816,7 +782,6 @@
     render();
   });
   var editCode = '', editVal = '', editAdd = false;
-  // 點清單：直接改成某個數量
   function openEdit(code) {
     editCode = code; editVal = String(counts()[code] || 0); editAdd = false;
     var i = itemOf(code);
@@ -828,7 +793,6 @@
     $('btnEditSave').textContent = '改成這個數量';
     $('editModal').classList.add('show');
   }
-  // 整盒／整箱：按了就把數字填進去
   function renderEditBoxes(code) {
     $('editBoxes').innerHTML = boxOptions(code).map(function (b) {
       return '<button type="button" data-box="' + b.n + '">' + b.label + ' ' + b.n + '<small>' + b.sub + '</small></button>';
@@ -840,7 +804,6 @@
     editVal = b.getAttribute('data-box');
     $('editQty').textContent = editVal;
   });
-  // 逐筆輸入數量：掃到後輸入這次收到幾件（加上去）
   function openQty(code) {
     editCode = code; editVal = ''; editAdd = true;
     var i = itemOf(code), got = counts()[code] || 0;
@@ -893,7 +856,6 @@
     else { editVal = ''; $('editQty').textContent = '0'; }
   });
   $('btnEditSave').addEventListener('click', saveEdit);
-  // 調撥出庫單：整項刪除
   $('btnEditDel').addEventListener('click', function () {
     if (!isOut()) return;
     outSet(editCode, 0); say('已刪除：' + nameOf(editCode));
@@ -903,7 +865,6 @@
   $('list').addEventListener('click', function (e) { var b = e.target.closest('button[data-code]'); if (b) openEdit(b.getAttribute('data-code')); });
   $('camList').addEventListener('click', function (e) { var b = e.target.closest('button[data-code]'); if (b) openEdit(b.getAttribute('data-code')); });
 
-  // ── 手動查品項／多筆候選 ───────────────────────────────
   function pickRows(list) {
     return list.slice(0, 60).map(function (p) {
       var i = itemOf(p.code);
@@ -939,20 +900,18 @@
   $('searchInput').addEventListener('input', function () { $('results').innerHTML = pickRows(searchProducts(this.value)); });
   $('results').addEventListener('click', function (e) { var b = e.target.closest('button[data-code]'); if (b) { closeModals(); take(b.getAttribute('data-code')); } });
 
-  // ── 輸入條碼（手機鍵盤）：可以一直輸入下一個 ─────────────
   function openType() {
     if (!ready()) { say('請先選調撥單', true); return; }
     $('typeMsg').textContent = '輸入後按 Enter 或「送出」，可以一直輸入下一個'; $('typeMsg').className = '';
     $('typeInput').value = '';
     $('typeModal').classList.add('show');
-    $('typeInput').focus();   // 要在按鈕的點擊裡直接 focus，手機鍵盤才會彈出
+    $('typeInput').focus();
   }
   function submitType() {
     var v = $('typeInput').value.trim();
     if (!v) { $('typeInput').focus(); return; }
     $('typeInput').value = '';
     onScan(v);
-    // 連續刷：留在輸入框，顯示剛剛的結果；逐筆：take() 已關掉輸入框改開數量鍵盤
     if ($('typeModal').classList.contains('show')) {
       $('typeMsg').textContent = lastMsg.text; $('typeMsg').className = lastMsg.err ? 'err' : '';
       $('typeInput').focus();
@@ -967,7 +926,6 @@
   $('btnSearchClose').addEventListener('click', closeModals);
   $('btnSearch').addEventListener('click', openSearch);
 
-  // ── 完成驗收 ───────────────────────────────────────────
   $('btnFinish').addEventListener('click', function () {
     if (isOut()) {
       if (!OUT.lines.length) { say('還沒有掃任何商品', true); beepErr(); return; }
@@ -1021,9 +979,6 @@
     S.done = true; persist(); closeModals(); say('已完成驗收'); beepOk(); render();
   });
 
-  // ── 相機掃描（做法同批號盤點：zxing-wasm 為主，讀不動改用 @zxing/library）────
-  //   連續：同一個條碼停在框裡每 1.5 秒算一件，換別的品項馬上算
-  //   逐筆：同一個條碼一直在畫面裡不重複跳鍵盤，移開再拿回來才算
   var ZXOPT = { formats: ['EAN-13', 'EAN-8', 'UPC-A', 'UPC-E', 'Code128', 'Code39', 'ITF'], tryHarder: true, tryRotate: true, tryInvert: false, tryDownscale: true, maxNumberOfSymbols: 1 };
   var CAM_GONE_FRAMES = 3, WASM_FAIL_MAX = 5, CAM_REPEAT_MS = 1500;
   var camOpen = false, camReader = null, camGen = 0, camTimer = null, camDevices = [], camIdx = -1, camLast = '', camLastAt = 0, camMiss = 0, wasmBroken = false;
@@ -1040,7 +995,6 @@
     if (camIdx >= 0 && camDevices[camIdx]) v.deviceId = { exact: camDevices[camIdx].deviceId }; else v.facingMode = { ideal: 'environment' };
     return v;
   }
-  // 相機開不起來時，把錯誤翻成門市看得懂的處理方式
   function camErrText(err) {
     var name = (err && err.name) || '', ua = navigator.userAgent || '';
     if (/Line\/|FBAN|FBAV|Instagram|MicroMessenger/i.test(ua)) return '請不要在 LINE／FB 裡開，按右上角選「用 Chrome 或 Safari 開啟」';
@@ -1054,10 +1008,8 @@
     closeCam();
     var base = '無法開啟相機：' + camErrText(err) + '（或先用「拍照解析」）';
     say(base, true);
-    // 診斷：頁面框架是否允許相機、瀏覽器記錄的權限狀態（沒跳詢問就被拒時用來判斷原因）
     var pol = document.permissionsPolicy || document.featurePolicy, frame = '?';
     try { if (pol && pol.allowsFeature) frame = pol.allowsFeature('camera') ? '允許' : '不允許'; } catch (e) {}
-    // 外面包了哪幾層（由內到外）：多一層非 Google 網頁外框的，通常就是擋住相機的那層
     var layers = '?';
     try {
       var ao = window.location.ancestorOrigins;
@@ -1078,13 +1030,12 @@
     }).catch(function () {});
   }
   function onCamText(t) {
-    if (document.querySelector('.modal.show')) { camLastAt = Date.now(); return; }   // 正在改數量／選品項：相機暫停，不算
+    if (document.querySelector('.modal.show')) { camLastAt = Date.now(); return; }
     if (!t) { if (++camMiss >= CAM_GONE_FRAMES) camLast = ''; return; }
     camMiss = 0;
     var now = Date.now();
     if (t !== camLast || (mode === 'cont' && now - camLastAt >= CAM_REPEAT_MS)) { camLast = t; camLastAt = now; onScan(t); }
   }
-  // 取畫面中央偏寬的區域（一維條碼是橫的），縮到最寬 1280
   function frameData(v) {
     var w = v.videoWidth, h = v.videoHeight, sw = Math.round(w * 0.9), sh = Math.round(h * 0.6), k = Math.min(1, 1280 / sw);
     var c = document.createElement('canvas'); c.width = Math.round(sw * k); c.height = Math.round(sh * k);
@@ -1114,7 +1065,6 @@
         camTimer = setTimeout(loop, 120);
       }).catch(function () {
         if (!camOpen || gen !== camGen) return;
-        // 辨識元件連續出錯：改用備用元件，不要讓門市對著畫面空等
         if (++fails >= WASM_FAIL_MAX && hasLib()) { wasmBroken = true; startLibCam(); return; }
         camTimer = setTimeout(loop, 300);
       });
@@ -1148,17 +1098,15 @@
     camOpen = true; camLast = ''; camMiss = 0;
     $('camLast').textContent = mode === 'each' ? '條碼放進框內，掃到後輸入數量' : '條碼停在框內，每 1.5 秒算一件'; $('camLast').className = '';
     $('cam').classList.add('show');
-    render();   // 下半部清單
+    render();
     startCam();
   }
   function closeCam() { camOpen = false; stopCam(); $('cam').classList.remove('show'); window.focus(); }
   $('btnCam').addEventListener('click', openCam);
   $('btnCamClose').addEventListener('click', closeCam);
-  // 相機下方那一列：點了直接改剛掃到的那個品項
   $('camLast').addEventListener('click', function () { if (lastCode && ready()) openEdit(lastCode); });
   $('btnCamFlip').addEventListener('click', function () { if (camDevices.length < 2) return; camIdx = (camIdx + 1) % camDevices.length; startCam(); });
 
-  // ── 拍照解析（同批號盤點：整張讀不到就局部放大再試）──────────
   function loadImg(file) {
     return new Promise(function (ok, no) {
       var img = new Image();
@@ -1177,7 +1125,6 @@
     return ZXingWASM.readBarcodesFromImageFile(file, ZXOPT).then(firstText).then(function (t) {
       if (t) return t;
       return loadImg(file).then(function (img) {
-        // 一維條碼是橫的：中間橫條、上半、下半、中央放大
         var crops = [[0, .3, 1, .4], [0, 0, 1, .5], [0, .5, 1, .5], [.15, .25, .7, .5], [0, .15, 1, .7]], i = 0;
         function next() {
           if (i >= crops.length) { URL.revokeObjectURL(img.src); return ''; }
@@ -1217,7 +1164,6 @@
     window.focus();
     if (!file) return;
     shotBusy = true; say('辨識中…');
-    // 辨識卡住時 25 秒後放開按鈕，不會整個按不動
     clearTimeout(shotTimer);
     shotTimer = setTimeout(function () { if (shotBusy) { shotBusy = false; say('辨識太久沒有回應，請再拍一次或用「手動查品項」', true); } }, 25000);
     scanFile(file).then(function (t) {
@@ -1229,8 +1175,6 @@
     }).catch(function (e) { shotBusy = false; clearTimeout(shotTimer); say('辨識失敗：' + ((e && e.message) || String(e)), true); });
   });
 
-  // ── 啟動 ───────────────────────────────────────────────
-  // 上次開著的單：重新跟後端讀一次應收與實收（分頁可能被總倉改過或重新匯入），未上傳的動作保留
   function reloadBatch() {
     $('setup').classList.add('hidden'); render();
     say('讀取 ' + S.batch.no + ' 最新內容…');
