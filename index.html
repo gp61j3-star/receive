@@ -599,7 +599,9 @@
         syncFailed = false;
         S.ops = S.ops.slice(batch.length);
         S.got = res.got || {}; S.done = !!res.done;
-        persist(); render();
+        persist();
+        if (!S.ops.length && S.closing) { closeBatch(); return; }
+        render();
         if (S.ops.length) flush();
       }, function (err) { syncing = false; say('上傳失敗：' + ((err && err.message) || err) + '（稍後自動重試）', true); fail(); });
     renderSync();
@@ -975,9 +977,19 @@
   }
   $('btnFinishOk').addEventListener('click', function () {
     if (isOut()) { sendOut(); return; }
+    S.done = true; S.closing = true;
     pushOp({ op: 'finish', code: '', n: 0 });
-    S.done = true; persist(); closeModals(); say('已完成驗收'); beepOk(); render();
+    closeModals(); say('已完成驗收，上傳中…'); beepOk(); render();
   });
+  function closeBatch() {
+    var no = S.batch ? S.batch.no : '';
+    if (camOpen) closeCam();
+    delete batchCache[S.store];
+    S.batch = null; S.items = []; S.got = {}; S.done = false; S.closing = false; lastCode = '';
+    persist(); render();
+    showSetup();
+    note('已完成驗收並上傳：' + no);
+  }
 
   var ZXOPT = { formats: ['EAN-13', 'EAN-8', 'UPC-A', 'UPC-E', 'Code128', 'Code39', 'ITF'], tryHarder: true, tryRotate: true, tryInvert: false, tryDownscale: true, maxNumberOfSymbols: 1 };
   var CAM_GONE_FRAMES = 3, WASM_FAIL_MAX = 5, CAM_REPEAT_MS = 1500;
@@ -1181,7 +1193,9 @@
     api('load', S.store, S.batch.id).then(function (res) {
       if (!res || !res.ok) { say((res && res.msg) || '讀不到這張單，請按右上角重新選單', true); showSetup(); return; }
       S.items = res.items; S.got = res.got || {}; S.done = !!res.done;
-      persist(); render();
+      persist();
+      if (S.closing && !S.ops.length) { closeBatch(); return; }
+      render();
       say(S.ops.length ? '有 ' + S.ops.length + ' 筆未上傳，自動補傳中' : '已更新：' + res.no + ' 應收 ' + S.items.length + ' 品');
       flush();
     }, function (err) {
