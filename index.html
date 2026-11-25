@@ -135,10 +135,12 @@
   #camFlash .ct { margin-top:4px; font-size:44px; font-weight:800; line-height:1.1; font-variant-numeric:tabular-nums; }
   #camFlash .ct small { font-size:20px; font-weight:600; opacity:.85; }
   .cam-bar { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:8px; align-items:center; padding:10px 12px; background:#fff; }
-  #camLast { font-size:15px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #camLast { min-width:0; font-size:13px; font-weight:600; line-height:1.3; white-space:normal; word-break:break-all; }
   #camLast.err { color:var(--err); }
-  #camLast.tap { min-height:48px; display:flex; align-items:center; padding:0 12px; border:1px solid var(--accent); border-radius:10px; background:var(--soft); cursor:pointer; }
+  #camLast.tap { min-height:48px; display:flex; flex-direction:column; justify-content:center; padding:4px 10px; border:1px solid var(--accent); border-radius:10px; background:var(--soft); cursor:pointer; }
   #camLast.tap.err { border-color:var(--err); background:#fbeeec; }
+  #camLast .t { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  #camLast .hint { margin-top:2px; font-size:12px; font-weight:700; color:var(--accent); text-decoration:underline; }
   .cam-bar button { min-height:48px; padding:0 16px; font-size:16px; font-weight:700; }
   #btnCamClose { background:var(--accent); border-color:var(--accent); color:#fff; }
   #focusTip { position:fixed; left:0; right:0; bottom:16px; z-index:25; display:none; justify-content:center; pointer-events:none; }
@@ -522,7 +524,9 @@
   });
   renderMode();
   function camBar() {
-    if (camOpen && lastMsg.text) { $('camLast').textContent = lastMsg.text; $('camLast').className = 'tap' + (lastMsg.err ? ' err' : ''); }
+    if (!camOpen || !lastMsg.text) return;
+    $('camLast').innerHTML = '<span class="t">' + esc(lastMsg.text) + '</span>' + (lastCode ? '<span class="hint">點這裡改數量</span>' : '');
+    $('camLast').className = 'tap' + (lastMsg.err ? ' err' : '');
   }
   function addOne(code) {
     if (isOut()) {
@@ -539,7 +543,7 @@
     else if (got > i.expect) { say('超收：' + nameOf(code) + ' 已掃 ' + got + '／應收 ' + i.expect, true); beepErr(); }
     else { say(nameOf(code) + ' +1（' + got + '／' + i.expect + '）'); beepOk(); }
     if (camOpen) {
-      $('camLast').textContent = lastMsg.text; $('camLast').className = 'tap' + (lastMsg.err ? ' err' : '');
+      camBar();
       camFlash(!lastMsg.err, esc(nameOf(code)),
         '+1　' + got + '<small>' + (i ? '／' + i.expect : '') + '</small>' + (!i ? '<small>　不在單上</small>' : got > i.expect ? '<small>　超收</small>' : ''));
     }
@@ -934,7 +938,7 @@
       var st = stores.filter(function (s) { return s.code === OUT.store; })[0];
       $('finishTitle').textContent = '送出調撥出庫單';
       $('finishSum').innerHTML = esc(st ? st.name : OUT.store) + '<br>共 <b>' + OUT.lines.length + '</b> 品、<b>' + outTotal() + '</b> 件' +
-        '<br><br>送出後會在試算表建一個分頁，並轉出 POS 調撥作業匯入檔。';
+        '<br><br>送出後會在雲端「調撥匯入檔」資料夾產生 POS 調撥作業匯入檔。';
       $('btnFinishOk').textContent = '確認送出';
       $('finishModal').classList.add('show');
       return;
