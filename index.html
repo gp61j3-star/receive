@@ -89,7 +89,10 @@
   #btnSet svg { width:18px; height:18px; }
   .zooms { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; padding:12px 16px 16px; }
   .zooms button { min-height:54px; font-size:16px; font-weight:700; color:var(--accent); font-variant-numeric:tabular-nums; }
-  .zooms button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .zooms button.on, .snds button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .set-l { padding:0 16px; font-size:14px; color:var(--mid); }
+  .snds { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; padding:10px 16px 16px; }
+  .snds button { min-height:48px; font-size:15px; font-weight:700; color:var(--accent); }
   .box h3 { font-size:16px; color:var(--mid); margin:20px 0 8px; }
   .box p { font-size:14px; color:var(--mid); }
   .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:8px; }
@@ -252,7 +255,7 @@
   <div class="sheet">
     <div class="sheet-h">
       <h3>設定</h3>
-      <p>畫面大小（100% 是標準）</p>
+      <p>畫面大小</p>
     </div>
     <div class="zooms">
       <button type="button" data-z="0.7">70%</button>
@@ -264,6 +267,13 @@
       <button type="button" data-z="1.3">130%</button>
       <button type="button" data-z="1.4">140%</button>
       <button type="button" data-z="1.5">150%</button>
+    </div>
+    <p class="set-l">音效</p>
+    <div class="snds">
+      <button type="button" data-s="beep">嗶嗶</button>
+      <button type="button" data-s="ding">叮咚</button>
+      <button type="button" data-s="tick">滴</button>
+      <button type="button" data-s="off">關閉</button>
     </div>
     <div class="sheet-f"><button id="btnSetClose" class="main" type="button">完成</button></div>
   </div>
@@ -441,8 +451,29 @@
       o.connect(g); g.connect(audio.destination); o.start(t); o.stop(t + ms / 1000);
     } catch (e) {}
   }
-  function beepOk() { tone(880, 70); tone(1320, 90, 0.08); }
-  function beepErr() { tone(220, 220); tone(220, 260, 0.28); }
+  var snd = load('recv.snd', 'beep');
+  if (['beep', 'ding', 'tick', 'off'].indexOf(snd) < 0) snd = 'beep';
+  function beepOk() {
+    if (snd === 'off') return;
+    if (snd === 'ding') { tone(1046, 120); tone(784, 200, 0.13); return; }
+    if (snd === 'tick') { tone(1500, 45); return; }
+    tone(880, 70); tone(1320, 90, 0.08);
+  }
+  function beepErr() {
+    if (snd === 'off') return;
+    tone(220, 220); tone(220, 260, 0.28);
+  }
+  function renderSnd() {
+    Array.prototype.forEach.call(document.querySelectorAll('.snds button'), function (b) {
+      b.classList.toggle('on', b.getAttribute('data-s') === snd);
+    });
+  }
+  renderSnd();
+  document.querySelector('.snds').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-s]'); if (!b) return;
+    snd = b.getAttribute('data-s'); save('recv.snd', snd); renderSnd();
+    unlockAudio(); beepOk();
+  });
 
   function say(text, err) { lastMsg = { text: text || '', err: !!err }; $('msg').textContent = lastMsg.text; $('msg').className = err ? 'err' : ''; }
   function renderHeader() {
