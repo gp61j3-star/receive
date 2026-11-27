@@ -91,7 +91,7 @@
   .zooms button { min-height:54px; font-size:16px; font-weight:700; color:var(--accent); font-variant-numeric:tabular-nums; }
   .zooms button.on, .snds button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
   .set-l { padding:0 16px; font-size:14px; color:var(--mid); }
-  .snds { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; padding:10px 16px 16px; }
+  .snds { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; padding:10px 16px 16px; }
   .snds button { min-height:48px; font-size:15px; font-weight:700; color:var(--accent); }
   .box h3 { font-size:16px; color:var(--mid); margin:20px 0 8px; }
   .box p { font-size:14px; color:var(--mid); }
@@ -273,6 +273,7 @@
       <button type="button" data-s="beep">嗶嗶</button>
       <button type="button" data-s="ding">叮咚</button>
       <button type="button" data-s="tick">滴</button>
+      <button type="button" data-s="soft">輕快</button>
       <button type="button" data-s="off">關閉</button>
     </div>
     <div class="sheet-f"><button id="btnSetClose" class="main" type="button">完成</button></div>
@@ -451,16 +452,27 @@
       o.connect(g); g.connect(audio.destination); o.start(t); o.stop(t + ms / 1000);
     } catch (e) {}
   }
+  function sweep(type, f1, f2, ms, vol) {
+    if (!audio) return;
+    try {
+      var o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime, s = ms / 1000;
+      o.type = type; o.frequency.setValueAtTime(f1, t); o.frequency.exponentialRampToValueAtTime(f2, t + s * 0.7);
+      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + s);
+      o.connect(g); g.connect(audio.destination); o.start(t); o.stop(t + s);
+    } catch (e) {}
+  }
   var snd = load('recv.snd', 'beep');
-  if (['beep', 'ding', 'tick', 'off'].indexOf(snd) < 0) snd = 'beep';
-  function beepOk() {
+  if (['beep', 'ding', 'tick', 'soft', 'off'].indexOf(snd) < 0) snd = 'beep';
+  function beepOk(full) {
     if (snd === 'off') return;
+    if (snd === 'soft') { if (full) sweep('sine', 660, 1480, 300, 0.2); else sweep('sine', 880, 1320, 90, 0.18); return; }
     if (snd === 'ding') { tone(1046, 120); tone(784, 200, 0.13); return; }
     if (snd === 'tick') { tone(1500, 45); return; }
     tone(880, 70); tone(1320, 90, 0.08);
   }
   function beepErr() {
     if (snd === 'off') return;
+    if (snd === 'soft') { sweep('triangle', 320, 140, 220, 0.25); return; }
     tone(220, 220); tone(220, 260, 0.28);
   }
   function renderSnd() {
@@ -472,7 +484,7 @@
   document.querySelector('.snds').addEventListener('click', function (e) {
     var b = e.target.closest('button[data-s]'); if (!b) return;
     snd = b.getAttribute('data-s'); save('recv.snd', snd); renderSnd();
-    unlockAudio(); beepOk();
+    unlockAudio(); beepOk(true);
   });
 
   function say(text, err) { lastMsg = { text: text || '', err: !!err }; $('msg').textContent = lastMsg.text; $('msg').className = err ? 'err' : ''; }
@@ -637,7 +649,7 @@
     var i = itemOf(code), got = counts()[code] || 0;
     if (!i) { say('不在這張調撥單：' + nameOf(code) + '（已記 ' + got + '）', true); beepErr(); }
     else if (got > i.expect) { say('超收：' + nameOf(code) + ' 已掃 ' + got + '／應收 ' + i.expect, true); beepErr(); }
-    else { say(nameOf(code) + ' +1（' + got + '／' + i.expect + '）'); beepOk(); }
+    else { say(nameOf(code) + ' +1（' + got + '／' + i.expect + '）'); beepOk(got === i.expect); }
     if (camOpen) {
       camBar();
       camFlash(!lastMsg.err, esc(nameOf(code)),
@@ -949,7 +961,7 @@
         var i = itemOf(editCode), got = counts()[editCode] || 0;
         if (!i) { say('不在這張調撥單：' + nameOf(editCode) + ' +' + n + '（已記 ' + got + '）', true); beepErr(); }
         else if (got > i.expect) { say('超收：' + nameOf(editCode) + ' +' + n + '，已收 ' + got + '／應收 ' + i.expect, true); beepErr(); }
-        else { say(nameOf(editCode) + ' +' + n + '（' + got + '／' + i.expect + '）'); beepOk(); }
+        else { say(nameOf(editCode) + ' +' + n + '（' + got + '／' + i.expect + '）'); beepOk(got === i.expect); }
       }
     } else if (n !== (counts()[editCode] || 0)) {
       pushOp({ op: 'set', code: editCode, name: nameOf(editCode), n: n }); say('已改：' + nameOf(editCode) + ' 實收 ' + n);
