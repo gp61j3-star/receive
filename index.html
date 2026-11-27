@@ -34,6 +34,8 @@
   .sum[data-f]:active { background:var(--soft); }
   .sum.on { border:2px solid var(--accent); background:var(--soft); }
   .sum.on span { color:var(--accent); font-weight:700; }
+  .sum.warn { border-color:var(--err); background:#fbeeec; }
+  .sum.warn b, .sum.warn span { color:var(--err); font-weight:700; }
 
   #card { margin:0 10px; min-height:96px; background:#fff; border:2px solid var(--line); border-radius:14px; padding:10px 14px; display:flex; align-items:center; gap:14px; }
   #card.ok { border-color:var(--ok); }
@@ -68,7 +70,7 @@
   .row .q { font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; }
   .row .q small { font-size:13px; font-weight:400; color:var(--mute); }
   .row .r { width:52px; text-align:center; font-size:13px; font-weight:700; }
-  .r-same { color:var(--ok); } .r-short { color:var(--mute); } .r-over, .r-extra { color:var(--err); }
+  .r-same { color:var(--ok); } .r-short { color:var(--mute); } .r-lack, .r-over, .r-extra { color:var(--err); }
   .empty { padding:24px; text-align:center; color:var(--mute); }
 
   #btnFinish { margin:0 10px; min-height:52px; background:var(--accent); border-color:var(--accent); color:#fff; font-size:18px; font-weight:700; }
@@ -396,7 +398,7 @@
   function sumTiles(list) {
     $('summary').style.gridTemplateColumns = 'repeat(' + list.length + ',1fr)';
     $('summary').innerHTML = list.map(function (t) {
-      return '<div class="sum' + (t[2] && t[2] === filter ? ' on' : '') + '"' + (t[2] ? ' data-f="' + t[2] + '"' : '') + '><b>' + t[0] + '</b><span>' + t[1] + '</span></div>';
+      return '<div class="sum' + (t[2] && t[2] === filter ? ' on' : '') + (t[3] ? ' warn' : '') + '"' + (t[2] ? ' data-f="' + t[2] + '"' : '') + '><b>' + t[0] + '</b><span>' + t[1] + '</span></div>';
     }).join('');
   }
   function inFilter(r) {
@@ -408,7 +410,7 @@
   function renderSummary(rows) {
     var got = 0, exp = 0, same = 0, diff = 0;
     rows.forEach(function (r) { got += r.got; exp += r.expect; if (r.expect && r.got === r.expect) same++; else if (r.got > 0 && r.got !== r.expect) diff++; });
-    sumTiles([[got, '已掃件數', 'got'], [exp, '應收件數', 'all'], [same, '相符品項', 'same'], [diff, '差異品項', 'diff']]);
+    sumTiles([[got, '已掃件數', 'got'], [exp, '應收件數', 'all'], [same, '相符品項', 'same'], [diff, '差異品項', 'diff', diff > 0]]);
   }
   function renderCard() {
     var card = $('card');
@@ -438,10 +440,10 @@
   function renderList(rows) {
     var list = rows.filter(inFilter);
     var html = list.length ? list.map(function (r) {
-      var res = resultOf(r.expect, r.got);
+      var res = resultOf(r.expect, r.got), cls = res.key === 'short' && r.got > 0 ? 'lack' : res.key;
       return '<button class="row' + (r.code === lastCode ? ' last' : '') + '" type="button" data-code="' + esc(r.code) + '">' +
         '<div><div class="n">' + esc(r.name || r.code) + '</div><div class="s mono">' + esc(r.code) + '</div></div>' +
-        '<div class="q">' + r.got + ' <small>/ ' + r.expect + '</small></div><div class="r r-' + res.key + '">' + res.text + '</div></button>';
+        '<div class="q">' + r.got + ' <small>/ ' + r.expect + '</small></div><div class="r r-' + cls + '">' + res.text + '</div></button>';
     }).join('') : '<div class="empty">' + (S.items.length ? '這個分類沒有品項' : '這張調撥單沒有品項') + '</div>';
     $('list').innerHTML = html;
     if (camOpen) {
