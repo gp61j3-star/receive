@@ -30,6 +30,10 @@
   .sum { background:#fff; border:1px solid var(--line); border-radius:10px; padding:6px 4px; text-align:center; }
   .sum b { display:block; font-size:22px; font-variant-numeric:tabular-nums; }
   .sum span { font-size:12px; color:var(--mid); }
+  .sum[data-f] { cursor:pointer; }
+  .sum[data-f]:active { background:var(--soft); }
+  .sum.on { border:2px solid var(--accent); background:var(--soft); }
+  .sum.on span { color:var(--accent); font-weight:700; }
 
   #card { margin:0 10px; min-height:96px; background:#fff; border:2px solid var(--line); border-radius:14px; padding:10px 14px; display:flex; align-items:center; gap:14px; }
   #card.ok { border-color:var(--ok); }
@@ -54,10 +58,8 @@
   #typeMsg { min-height:1.5em; }
   #typeMsg.err { color:var(--err); font-weight:700; }
 
-  #listBox { min-height:0; margin:0 10px; display:grid; grid-template-rows:auto minmax(0,1fr); background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
-  #filters { display:flex; border-bottom:1px solid var(--line); }
-  #filters button { flex:1; border:0; border-radius:0; padding:9px 0; font-size:14px; color:var(--mid); background:#fff; }
-  #filters button.on { color:var(--accent); font-weight:700; box-shadow:inset 0 -2px 0 var(--accent); }
+  #listBox { min-height:0; margin:0 10px; display:grid; grid-template-rows:minmax(0,1fr); background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+
   #list { overflow:auto; -webkit-overflow-scrolling:touch; }
   .row { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:10px; align-items:center; width:100%; border:0; border-bottom:1px solid var(--line); border-radius:0; padding:8px 12px; text-align:left; min-height:54px; background:#fff; }
   .row.last { background:var(--soft); }
@@ -199,11 +201,7 @@
   </div>
   <input type="file" id="fShot" accept="image/*" capture="environment" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
   <div id="listBox">
-    <div id="filters">
-      <button type="button" data-f="all" class="on">全部</button>
-      <button type="button" data-f="todo">未到齊</button>
-      <button type="button" data-f="diff">有差異</button>
-    </div>
+
     <div id="list"></div>
   </div>
   <button id="btnFinish" type="button">完成驗收</button>
@@ -397,12 +395,20 @@
   }
   function sumTiles(list) {
     $('summary').style.gridTemplateColumns = 'repeat(' + list.length + ',1fr)';
-    $('summary').innerHTML = list.map(function (t) { return '<div class="sum"><b>' + t[0] + '</b><span>' + t[1] + '</span></div>'; }).join('');
+    $('summary').innerHTML = list.map(function (t) {
+      return '<div class="sum' + (t[2] && t[2] === filter ? ' on' : '') + '"' + (t[2] ? ' data-f="' + t[2] + '"' : '') + '><b>' + t[0] + '</b><span>' + t[1] + '</span></div>';
+    }).join('');
+  }
+  function inFilter(r) {
+    if (filter === 'got') return r.got > 0;
+    if (filter === 'same') return r.expect && r.got === r.expect;
+    if (filter === 'diff') return r.got > 0 && r.got !== r.expect;
+    return true;
   }
   function renderSummary(rows) {
     var got = 0, exp = 0, same = 0, diff = 0;
-    rows.forEach(function (r) { got += r.got; exp += r.expect; if (r.expect && r.got === r.expect) same++; else if (r.got !== r.expect) diff++; });
-    sumTiles([[got, '已掃件數'], [exp, '應收件數'], [same, '相符品項'], [diff, '差異品項']]);
+    rows.forEach(function (r) { got += r.got; exp += r.expect; if (r.expect && r.got === r.expect) same++; else if (r.got > 0 && r.got !== r.expect) diff++; });
+    sumTiles([[got, '已掃件數', 'got'], [exp, '應收件數', 'all'], [same, '相符品項', 'same'], [diff, '差異品項', 'diff']]);
   }
   function renderCard() {
     var card = $('card');
@@ -430,17 +436,13 @@
     return ((isOil || unit === 'g') ? BOX.g : BOX.ml)[size] || [];
   }
   function renderList(rows) {
-    var list = rows.filter(function (r) {
-      if (filter === 'todo') return r.expect && r.got < r.expect;
-      if (filter === 'diff') return r.got !== r.expect;
-      return true;
-    });
+    var list = rows.filter(inFilter);
     var html = list.length ? list.map(function (r) {
       var res = resultOf(r.expect, r.got);
       return '<button class="row' + (r.code === lastCode ? ' last' : '') + '" type="button" data-code="' + esc(r.code) + '">' +
         '<div><div class="n">' + esc(r.name || r.code) + '</div><div class="s mono">' + esc(r.code) + '</div></div>' +
         '<div class="q">' + r.got + ' <small>/ ' + r.expect + '</small></div><div class="r r-' + res.key + '">' + res.text + '</div></button>';
-    }).join('') : '<div class="empty">' + (S.items.length ? '這個篩選沒有品項' : '這張調撥單沒有品項') + '</div>';
+    }).join('') : '<div class="empty">' + (S.items.length ? '這個分類沒有品項' : '這張調撥單沒有品項') + '</div>';
     $('list').innerHTML = html;
     if (camOpen) {
       $('camList').innerHTML = html;
@@ -460,7 +462,6 @@
     b.textContent = S.done ? '已完成驗收（還可以補掃或改數量）' : '完成驗收';
   }
   function render() {
-    $('filters').classList.toggle('hidden', isOut());
     if (isOut()) { renderOut(); return; }
     var rows = rowsAll();
     renderHeader(); renderSummary(rows); renderCard(); renderList(rows); renderSync(); renderFinish();
@@ -699,7 +700,7 @@
       S.items = res.items; S.got = res.got || {}; S.done = !!res.done;
       if (!same) S.ops = [];
       S.staff = pickedStaff();
-      lastCode = ''; persist();
+      lastCode = ''; filter = 'all'; persist();
       $('setup').classList.add('hidden'); note('');
       say(S.items.length ? '開始掃描：' + res.no + ' 應收 ' + S.items.length + ' 品' : '這張調撥單沒有品項', !S.items.length);
       render(); flush(); window.focus();
@@ -781,10 +782,10 @@
   });
   $('btnWho').addEventListener('click', function () { delete batchCache[S.store]; delete outCache[S.store]; showSetup(); });
 
-  $('filters').addEventListener('click', function (e) {
-    var b = e.target.closest('button[data-f]'); if (!b) return;
-    filter = b.getAttribute('data-f');
-    Array.prototype.forEach.call($('filters').children, function (x) { x.classList.toggle('on', x === b); });
+  $('summary').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-f]'); if (!b || isOut()) return;
+    var f = b.getAttribute('data-f');
+    filter = filter === f ? 'all' : f;
     render();
   });
   var editCode = '', editVal = '', editAdd = false;
