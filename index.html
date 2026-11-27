@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <base target="_top">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta id="vp" name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>入庫驗收</title>
 <script src="https://unpkg.com/@zxing/library@0.20.0"></script>
 <script src="https://cdn.jsdelivr.net/npm/zxing-wasm@2.2.4/dist/iife/reader/index.js"></script>
@@ -84,6 +84,12 @@
   .screen { position:fixed; inset:0; z-index:30; background:var(--bg); overflow:auto; padding:20px 14px; }
   .box { max-width:720px; margin:0 auto; }
   .box h2 { font-size:22px; color:var(--accent); margin:0 0 6px; }
+  .box-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  #btnSet { display:flex; align-items:center; gap:4px; padding:6px 10px; font-size:14px; color:var(--accent); }
+  #btnSet svg { width:18px; height:18px; }
+  .zooms { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; padding:12px 16px 16px; }
+  .zooms button { min-height:54px; font-size:16px; font-weight:700; color:var(--accent); font-variant-numeric:tabular-nums; }
+  .zooms button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
   .box h3 { font-size:16px; color:var(--mid); margin:20px 0 8px; }
   .box p { font-size:14px; color:var(--mid); }
   .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:8px; }
@@ -217,7 +223,10 @@
 
 <div id="setup" class="screen">
   <div class="box">
-    <h2>入庫驗收</h2>
+    <div class="box-top">
+      <h2>入庫驗收</h2>
+      <button id="btnSet" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>設定</button>
+    </div>
     <p>選門市、驗收人員，再選要驗的調撥單。</p>
     <h3>門市</h3>
     <div id="storeGrid" class="grid"></div>
@@ -237,6 +246,23 @@
     </div>
     <div id="note"></div>
     <button id="btnReset" type="button" class="hidden" style="margin-top:14px;padding:10px 16px;font-size:15px;color:var(--err);border-color:var(--err);">清除這台手機的暫存</button>  </div>
+</div>
+
+<div id="setModal" class="modal">
+  <div class="sheet">
+    <div class="sheet-h">
+      <h3>設定</h3>
+      <p>畫面大小（100% 是標準，這支手機會記住）</p>
+    </div>
+    <div class="zooms">
+      <button type="button" data-z="0.8">80%</button>
+      <button type="button" data-z="0.9">90%</button>
+      <button type="button" data-z="1">100%</button>
+      <button type="button" data-z="1.1">110%</button>
+      <button type="button" data-z="1.2">120%</button>
+    </div>
+    <div class="sheet-f"><button id="btnSetClose" class="main" type="button">完成</button></div>
+  </div>
 </div>
 
 <div id="searchModal" class="modal">
@@ -326,6 +352,24 @@
       return j.data;
     });
   }
+
+  var BASE_W = window.screen && window.screen.width ? window.screen.width : 0;
+  var zoom = Number(load('recv.zoom', 1)) || 1;
+  function applyZoom() {
+    var vp = $('vp');
+    if (zoom === 1 || !BASE_W) vp.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
+    else vp.setAttribute('content', 'width=' + Math.round(BASE_W / zoom) + ', initial-scale=' + zoom + ', maximum-scale=' + zoom + ', user-scalable=no');
+    Array.prototype.forEach.call(document.querySelectorAll('.zooms button'), function (b) {
+      b.classList.toggle('on', Number(b.getAttribute('data-z')) === zoom);
+    });
+  }
+  applyZoom();
+  $('btnSet').addEventListener('click', function () { applyZoom(); $('setModal').classList.add('show'); });
+  $('btnSetClose').addEventListener('click', function () { $('setModal').classList.remove('show'); });
+  document.querySelector('.zooms').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-z]'); if (!b) return;
+    zoom = Number(b.getAttribute('data-z')); save('recv.zoom', zoom); applyZoom();
+  });
 
   var S = load(KEY_SESSION, null) || {};
   S.ops = S.ops || []; S.got = S.got || {}; S.items = S.items || []; S.staff = S.staff || [];
