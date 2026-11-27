@@ -52,7 +52,9 @@
   #msg.err { background:#fbeeec; color:var(--err); white-space:normal; }
 
   .tools { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; padding:0 10px; }
-  .tools button { min-height:48px; font-size:16px; font-weight:600; color:var(--accent); }
+  .tools button { min-height:48px; font-size:16px; font-weight:600; color:var(--accent); line-height:1.2; }
+  .tools button small { display:block; margin-top:1px; font-size:11px; font-weight:400; color:var(--mute); }
+  .tools button .ico { width:16px; height:16px; margin-right:4px; vertical-align:-3px; }
   .tools .modes { grid-column:1 / -1; display:grid; grid-template-columns:1fr 1fr; gap:6px; }
   .tools .modes button { min-height:40px; font-size:15px; }
   .tools .modes button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
@@ -196,8 +198,8 @@
       <button type="button" data-mode="cont">連續刷 +1</button>
       <button type="button" data-mode="each">逐筆輸入數量</button>
     </div>
-    <button id="btnCam" type="button">相機掃描</button>
-    <button id="btnShot" type="button">拍照解析</button>
+    <button id="btnCam" type="button"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>相機掃描</button>
+    <button id="btnShot" type="button">拍照解析<small>掃不到時用</small></button>
     <button id="btnType" type="button">輸入條碼</button>
     <button id="btnSearch" type="button">查品項</button>
   </div>
@@ -393,12 +395,12 @@
   function say(text, err) { lastMsg = { text: text || '', err: !!err }; $('msg').textContent = lastMsg.text; $('msg').className = err ? 'err' : ''; }
   function renderHeader() {
     var st = stores.filter(function (s) { return s.code === S.store; })[0];
-    $('btnWho').innerHTML = S.batch ? esc((st ? st.name : S.store) + '・' + S.batch.no) + '<small>' + esc(S.staff.join('、')) + '</small>' : '選擇門市';
+    $('btnWho').innerHTML = S.batch ? esc((st ? st.name : S.store) + '・' + S.batch.no) + '<small>' + esc(S.staff.join('、')) + '‧換單</small>' : '選擇門市';
   }
   function sumTiles(list) {
     $('summary').style.gridTemplateColumns = 'repeat(' + list.length + ',1fr)';
     $('summary').innerHTML = list.map(function (t) {
-      return '<div class="sum' + (t[2] && t[2] === filter ? ' on' : '') + (t[3] ? ' warn' : '') + '"' + (t[2] ? ' data-f="' + t[2] + '"' : '') + '><b>' + t[0] + '</b><span>' + t[1] + '</span></div>';
+      return '<div class="sum' + (t[2] && t[2] === filter ? ' on' : '') + (t[3] ? ' warn' : '') + '"' + (t[2] ? ' data-f="' + t[2] + '"' : '') + '><b>' + t[0] + '</b><span>' + t[1] + (t[2] ? ' ›' : '') + '</span></div>';
     }).join('');
   }
   function inFilter(r) {
@@ -471,7 +473,7 @@
 
   function renderOut() {
     var st = stores.filter(function (s) { return s.code === OUT.store; })[0];
-    $('btnWho').innerHTML = esc('調撥出庫・' + (st ? st.name : OUT.store)) + '<small>' + esc((OUT.staff || []).join('、')) + '</small>';
+    $('btnWho').innerHTML = esc('調撥出庫・' + (st ? st.name : OUT.store)) + '<small>' + esc((OUT.staff || []).join('、')) + '‧換單</small>';
     sumTiles([[OUT.lines.length, '品項'], [outTotal(), '件數']]);
     var card = $('card'), n = lastCode ? (counts()[lastCode] || 0) : 0;
     card.className = '';
@@ -704,7 +706,7 @@
       S.staff = pickedStaff();
       lastCode = ''; filter = 'all'; persist();
       $('setup').classList.add('hidden'); note('');
-      say(S.items.length ? '開始掃描：' + res.no + ' 應收 ' + S.items.length + ' 品' : '這張調撥單沒有品項', !S.items.length);
+      say(S.items.length ? '開始掃描：' + res.no + ' 應收 ' + S.items.length + ' 品，點上方數字可切換明細' : '這張調撥單沒有品項', !S.items.length);
       render(); flush(); window.focus();
     }, function (err) { note('讀取失敗：' + (err && err.message || err), true); });
   }
@@ -789,7 +791,14 @@
     var f = b.getAttribute('data-f');
     filter = filter === f ? 'all' : f;
     render();
+    say(FILTER_TEXT[filter]);
   });
+  var FILTER_TEXT = {
+    all: '目前顯示：全部明細',
+    got: '目前顯示：已刷到的品項（再點一次回全部）',
+    same: '目前顯示：相符品項（再點一次回全部）',
+    diff: '目前顯示：差異品項（再點一次回全部）'
+  };
   var editCode = '', editVal = '', editAdd = false;
   function openEdit(code) {
     editCode = code; editVal = String(counts()[code] || 0); editAdd = false;
