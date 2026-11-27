@@ -46,7 +46,10 @@
   #card .cnt { text-align:center; min-width:96px; }
   #card .cnt b { display:block; font-size:40px; line-height:1.05; font-variant-numeric:tabular-nums; color:var(--accent); }
   #card .cnt span { font-size:13px; color:var(--mid); }
-  #card .wait { flex:1; text-align:center; color:var(--mid); font-size:17px; }
+  #card .wait { flex:1; display:flex; flex-direction:column; align-items:center; text-align:center; color:var(--mid); }
+  #card .wait svg { width:34px; height:34px; color:#6f7f90; }
+  #card .wait b { margin-top:4px; font-size:17px; color:var(--ink); }
+  #card .wait small { margin-top:2px; font-size:12px; color:var(--mute); }
 
   #msg { margin:0 10px; min-height:32px; padding:5px 12px; border-radius:8px; font-size:15px; font-weight:600; color:var(--ok); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #msg.err { background:#fbeeec; color:var(--err); white-space:normal; }
@@ -167,7 +170,8 @@
     #card .cd { font-size:12px; }
     #card .cnt { min-width:70px; }
     #card .cnt b { font-size:30px; }
-    #card .wait { font-size:14px; }
+    #card .wait svg { width:28px; height:28px; }
+    #card .wait b { margin-top:2px; font-size:15px; }
     #msg { margin:0 8px; min-height:26px; padding:3px 10px; font-size:13px; }
     .tools { gap:4px; padding:0 8px; }
     .tools button { min-height:44px; font-size:14px; padding:0 2px; }
@@ -416,11 +420,18 @@
   }
   function renderCard() {
     var card = $('card');
-    if (!lastCode) { card.className = ''; card.innerHTML = '<div class="wait">掃商品條碼，每掃一次 +1<br>點清單可直接改數量（整盒在數字鍵盤裡）</div>'; return; }
+    if (!lastCode) { card.className = ''; card.innerHTML = waitHtml('請掃描商品條碼', mode === 'each' ? '掃到後輸入數量・點清單可改數量' : '每掃一次 +1・點清單可改數量'); return; }
     var i = itemOf(lastCode), exp = i ? i.expect : 0, got = counts()[lastCode] || 0, r = resultOf(exp, got);
     card.className = r.key === 'same' ? 'ok' : (r.key === 'over' || r.key === 'extra') ? 'err' : '';
     card.innerHTML = '<div class="info"><div class="nm">' + esc(nameOf(lastCode)) + '</div><div class="cd mono">' + esc(lastCode) + '・' + esc(r.text) + '</div></div>' +
       '<div class="cnt"><b>' + got + '</b><span>' + (exp ? '應收 ' + exp : '不在清單') + '</span></div>';
+  }
+
+  function waitHtml(title, sub) {
+    return '<div class="wait"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M3 7V4h3M18 4h3v3M21 17v3h-3M6 20H3v-3"/>' +
+      '<path d="M7 8v8M13 8v8M17 8v8" stroke-width="2.2"/><path d="M9.5 8v8M11 8v8M15 8v8" stroke-width="1"/></svg>' +
+      '<b>' + title + '</b><small>' + sub + '</small></div>';
   }
 
   var B_49 = { label: '整箱', n: 49, sub: '49/箱' }, B_36 = { label: '整箱', n: 36, sub: '36/箱' }, B_16 = { label: '整箱', n: 16, sub: '16/箱' };
@@ -479,7 +490,7 @@
     card.className = '';
     card.innerHTML = lastCode && n
       ? '<div class="info"><div class="nm">' + esc(nameOf(lastCode)) + '</div><div class="cd mono">' + esc(lastCode) + '</div></div><div class="cnt"><b>' + n + '</b><span>調撥數量</span></div>'
-      : '<div class="wait">掃要出貨的商品，每掃一次 +1<br>點清單可改數量，改成 0 就移除</div>';
+      : waitHtml('請掃描要出貨的商品', mode === 'each' ? '掃到後輸入數量・點清單可改數量' : '每掃一次 +1・點清單可改數量');
     var html = OUT.lines.length ? OUT.lines.map(function (l) {
       return '<button class="row' + (l.code === lastCode ? ' last' : '') + '" type="button" data-code="' + esc(l.code) + '">' +
         '<div><div class="n">' + esc(l.name || l.code) + '</div><div class="s mono">' + esc(l.code) + '</div></div>' +
@@ -525,6 +536,7 @@
   document.querySelector('.modes').addEventListener('click', function (e) {
     var b = e.target.closest('button[data-mode]'); if (!b) return;
     mode = b.getAttribute('data-mode'); save('recv.mode', mode); renderMode();
+    if (ready()) render();
     say(mode === 'each' ? '逐筆輸入數量：掃到後輸入數量' : '連續刷：每掃一次 +1');
   });
   renderMode();
